@@ -1,9 +1,11 @@
-Pillow
-tqdm
-gdown
-shapely
+numpy
 opencv-python
-scikit-image
-jupyterlab
 pandas
-#roboflow
+openslide-python
+tqdm
+# scikit-image
+imagesize
+zenodo_get
+gdown
+kaggle
+chardet

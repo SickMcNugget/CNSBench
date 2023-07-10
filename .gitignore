@@ -2,3 +2,4 @@ MoNuSeg*
 *.zip
 profile
 pca/
+*.pyc
