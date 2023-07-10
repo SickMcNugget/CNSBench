@@ -1,0 +1,9 @@
+Pillow
+tqdm
+gdown
+shapely
+opencv-python
+scikit-image
+jupyterlab
+pandas
+#roboflow
