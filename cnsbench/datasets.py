@@ -122,6 +122,23 @@ class MoNuSegDownloader(Downloader):
                 return True
         return False
 
+class MoNuSACDownloader(Downloader):
+    def __init__(self, zip_ids: list[str] = ["1lxMZaAPSpEHLSxGA9KKMt_r-4S8dwLhq", 
+                                             "1G54vsOdxWY1hG7dzmkeK3r0xz9s-heyQ"]):
+        super().__init__(zip_ids)
+        self.expected_zip_names = ["MoNuSAC_images_and_annotations.zip",
+                                   "MoNuSAC Testing Data and Annotations.zip"]
+
+    def _download(self, zip_id: str) -> Path:
+        zip_path = gdown.download(id=zip_id)
+        return Path(zip_path)
+    
+    def _should_download(self) -> bool:
+        for zip_name in self.expected_zip_names:
+            if not (self.prefix / zip_name).exists():
+                return True
+        return False
+
 class Unzipper:
     def __init__(self, zip_paths: list[Path]):
         self.zip_paths: list[Path] = zip_paths
@@ -161,7 +178,9 @@ class Mover(ABC):
     def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
         if isinstance(dataset_root, str):
             dataset_root = Path(dataset_root)
-        self.dataset_root = dataset_root
+        
+        dataset_name = self.__class__.__name__.split("Mover")[0]
+        self.dataset_root = dataset_root / dataset_name
         self.unzip_paths = unzip_paths
 
     @property
@@ -215,7 +234,7 @@ class Mover(ABC):
 
 class MoNuSegMover(Mover):
     def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
-        super().__init__(dataset_root / "MoNuSeg", unzip_paths)
+        super().__init__(dataset_root, unzip_paths)
         self.expected_zips = {
             "train": "MoNuSeg 2018 Training Data",
             "val": "MoNuSeg 2018 Training Data",
@@ -260,11 +279,73 @@ class MoNuSegMover(Mover):
                 for test_file in test_files:
                     self.move_if_new(test_file, test_path)
 
+class MoNuSACMover(Mover):
+    def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
+        super().__init__(dataset_root, unzip_paths)
+        self.expected_zips = {
+            "train": "MoNuSAC_images_and_annotations",
+            "val": "MoNuSAC_images_and_annotations",
+            "test": "MoNuSAC Testing Data and Annotations"
+
+        }
+
+    def move_train(self):
+        train_path = self.dataset_root / "original" / "train"
+
+        for unzip_path in self.unzip_paths:
+            if self.expected_zips["train"] in str(unzip_path):
+
+                patients = list((unzip_path / unzip_path.stem).glob("**/*.xml"))
+                train_patients = patients[:-11]
+
+                pooldata = [(patient, train_path) for patient in train_patients]
+                with Pool() as pool:
+                    for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
+                                  total=len(pooldata)):
+                        pass
+
+    def move_patient(self, patient: Path, dest: Path):
+        for file in patient.iterdir():
+            if not (dest / file.name).exists():
+                shutil.move(file, dest)
+
+    def move_valid(self):
+        val_path = self.dataset_root / "original" / "val"
+
+        for unzip_path in self.unzip_paths:
+            if self.expected_zips["val"] in str(unzip_path):
+
+                patients = list((unzip_path / unzip_path.stem).glob("**/*.xml"))
+                val_patients = patients[-11:]
+
+                pooldata = [(patient, val_path) for patient in val_patients]
+                with Pool() as pool:
+                    for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
+                                  total=len(pooldata)):
+                        pass
+
+    def move_test(self):
+        test_path = self.dataset_root / "original" / "test"
+        
+        for unzip_path in self.unzip_paths:
+            if self.expected_zips["test"] in str(unzip_path):
+                patients = (unzip_path / unzip_path.stem).glob("*")
+                pooldata = [(patient, test_path) for patient in patients]
+                with Pool() as pool:
+                    for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
+                                  total=len(pooldata)):
+                        pass
+
+                for test_file in test_files:
+                    self.move_if_new(test_file, test_path)
+
+
 class MaskGenerator(ABC):
     def __init__(self, dataset_root: str | Path):
         if isinstance(dataset_root, str):
             dataset_root = Path(dataset_root)
-        self.dataset_root = dataset_root
+        dataset_name = self.__class__.__name__.split("MaskGenerator")[0]
+        self.dataset_root = dataset_root / dataset_name
     
     @property
     def dataset_root(self):
@@ -314,7 +395,7 @@ class MaskGenerator(ABC):
 
 class MoNuSegMaskGenerator(MaskGenerator):
     def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root / "MoNuSeg")
+        super().__init__(dataset_root)
         self.xml_parser = MoNuSegXMLParser()
 
     def _get_pooldata(self, mask_path: Path, original_path: Path):
@@ -399,7 +480,8 @@ class Yolofier(ABC):
     def __init__(self, dataset_root: str | Path):
         if isinstance(dataset_root, str):
             dataset_root = Path(dataset_root)
-        self.dataset_root = dataset_root
+        dataset_name = self.__class__.__name__.split("Yolofier")[0]
+        self.dataset_root = dataset_root / dataset_name
 
     def yolofy(self):
         yolofy_paths = [self.dataset_root / "yolo" / "train",
@@ -443,7 +525,7 @@ class Yolofier(ABC):
 
 class MoNuSegYolofier(Yolofier):
     def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root / "MoNuSeg")
+        super().__init__(dataset_root)
         self.xml_parser = MoNuSegXMLParser()
 
     def _get_pooldata(self, yolofy_path: Path, mask_path: Path, original_path: Path):
