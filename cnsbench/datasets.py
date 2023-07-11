@@ -10,11 +10,11 @@ from multiprocessing import Pool
 
 # Linalg, parsing, image manip
 import xml.etree.ElementTree as ET
-from shapely import Polygon
 from skimage.draw import polygon
 import numpy as np
 import cv2
 import imagesize
+from openslide import OpenSlide
 
 # Progress
 from tqdm import tqdm
@@ -336,10 +336,6 @@ class MoNuSACMover(Mover):
                                   total=len(pooldata)):
                         pass
 
-                for test_file in test_files:
-                    self.move_if_new(test_file, test_path)
-
-
 class MaskGenerator(ABC):
     def __init__(self, dataset_root: str | Path):
         if isinstance(dataset_root, str):
@@ -429,6 +425,40 @@ class MoNuSegMaskGenerator(MaskGenerator):
         filename = str((mask_path / patient.stem).with_suffix(".png"))
         cv2.imwrite(filename, mask)
 
+class MoNuSACMaskGenerator(MaskGenerator):
+    def __init__(self, dataset_root: str | Path):
+        super().__init__(dataset_root)
+        self.xml_parser = MoNuSACXMLParser()
+        self.label_map = {'Epithelial':1,
+                          'Lymphocyte':2,
+                          'Neutrophil':3,
+                          'Macrophage':4,
+                          'Ambiguous':5,}
+    
+    def _get_pooldata(self, mask_path: Path, original_path: Path):
+        patients = sorted(original_path.glob("*.xml"))
+        return [(mask_path, patient) for patient in patients]
+    
+    def _generate_mask(self, mask_path: Path, patient: Path):
+        patient_image = patient.with_suffix(".svs")
+        if not patient_image.exists():
+            return
+
+        slide = OpenSlide(str(patient_image))
+        width, height = slide.level_dimensions[0]
+        slide.close()
+        nuclei = self.xml_parser.parse(patient)
+
+        # skimage.draw.polygon uses the point-in-polygon test for accuracy!
+        # DO NOT use opencv to draw polygons that are defined with real coordinates
+        mask = np.zeros((height, width))
+        for nucleus, class_label in nuclei:
+            rr, cc = polygon(nucleus[:,1], nucleus[:,0], mask.shape)
+            mask[rr,cc] = self.label_map[class_label]
+
+        filename = str((mask_path / patient.stem).with_suffix(".png"))
+        cv2.imwrite(filename, mask)
+
 class XMLParser(ABC):
     def __init__(self):
         self._xml = None
@@ -473,6 +503,35 @@ class MoNuSegXMLParser(XMLParser):
                 nucleus[i,0] = float(vertex.get("X"))
                 nucleus[i,1] = float(vertex.get("Y"))
             nuclei.append(nucleus)
+        
+        return nuclei
+
+class MoNuSACXMLParser(XMLParser):
+    def __init__(self):
+        super().__init__()
+
+    def _parse(self) -> list[np.ndarray]:
+        root = self._xml_tree.getroot()
+    
+        nuclei = []
+        annotations = root.findall("Annotation")
+        for annotation in annotations:
+            class_label = annotation.find("Attributes/Attribute").get("Name")
+            regions = annotation.findall("Regions/Region")
+            if len(regions) == 0: # Some errors in annotations
+                continue
+            for region in regions:
+                vertices = region.findall("Vertices/Vertex")
+
+                # Invalid region by definition
+                if len(vertices) < 3:
+                    continue
+
+                nucleus = np.zeros((len(vertices), 2))
+                for i, vertex in enumerate(vertices):
+                    nucleus[i,0] = float(vertex.get("X"))
+                    nucleus[i,1] = float(vertex.get("Y"))
+                nuclei.append((nucleus, class_label))
         
         return nuclei
 
@@ -526,7 +585,58 @@ class Yolofier(ABC):
 class MoNuSegYolofier(Yolofier):
     def __init__(self, dataset_root: str | Path):
         super().__init__(dataset_root)
-        self.xml_parser = MoNuSegXMLParser()
+
+    def _get_pooldata(self, yolofy_path: Path, mask_path: Path, original_path: Path):
+        patient_images = sorted(original_path.glob("*.tif"))
+        patient_masks = sorted(mask_path.glob("*.png"))
+        pooldata = [(yolofy_path, patient_image, patient_mask) 
+                     for patient_image, patient_mask 
+                     in zip(patient_images, patient_masks)]
+        return pooldata
+
+    def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_mask: Path):
+        if not patient_image.exists() or not patient_mask.exists():
+            return
+
+        # YOLOv8 requires .png images
+        patient_img = cv2.imread(str(patient_image))
+        filename = str((yolofy_path / patient_image.stem).with_suffix(".png"))
+        cv2.imwrite(filename, patient_img)
+
+        height, width = patient_img.shape[:2]
+
+        mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
+        contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+
+        normalised_contours = []
+        for contour in contours:
+            float_contour = contour.astype(float)
+            float_contour[:,0,0] = float_contour[:,0,0] / width
+            float_contour[:,0,1] = float_contour[:,0,1] / height
+            normalised_contours.append(float_contour)
+
+        annotations = self.contours_to_annotations(normalised_contours)
+
+        filename = (yolofy_path / patient_image.stem).with_suffix(".txt")
+        with open(filename, "w") as f:
+            f.write(annotations)
+
+    def contours_to_annotations(self, contours: np.ndarray) -> str:
+        annotations = ""
+        
+        for contour in contours:
+            annotations += "0"
+            for vertex in contour:
+                annotations += f" {vertex[0,0]} {vertex[0,1]}"
+            # close off the nucleus polygon (using first vertex of contour)
+            annotations += f" {contour[0, 0, 0]} {contour[0, 0, 1]}"
+            annotations += "\n"
+
+        return annotations
+    
+class MoNuSACYolofier(Yolofier):
+    def __init__(self, dataset_root: str | Path):
+        super().__init__(dataset_root)
 
     def _get_pooldata(self, yolofy_path: Path, mask_path: Path, original_path: Path):
         patient_images = sorted(original_path.glob("*.tif"))
