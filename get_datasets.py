@@ -1,10 +1,10 @@
 from pathlib import Path
 import argparse
 import importlib
-from cnsbench.datasets import MoNuSegDownloader, MoNuSegMaskGenerator, MoNuSegYolofier, Unzipper, MoNuSegMover
+from cnsbench.datasets import Unzipper
 
 def main(args: argparse.Namespace):
-    for dataset in args.datasets:
+    for dataset in ["TNBC"]:#args.datasets:
         print(f"-- {dataset} --")
         get_dataset(dataset, args)
 
@@ -27,18 +27,6 @@ def get_dataset(dataset: str, args: argparse.Namespace):
     print(f"\nCreating YOLO compatible training data for {dataset}\n")
     yolofier_cls = get_dataset_class(dataset, "Yolofier")
     yolofier_cls(args.dataset_root).yolofy()
-
-def get_monuseg(args: argparse.Namespace):
-    print("Attempting to download MoNuSeg")
-    zip_paths = MoNuSegDownloader().download()
-    print("Unzipping MoNuSeg")
-    unzip_paths = Unzipper(zip_paths).unzip()
-    print("Organising MoNuSeg")
-    MoNuSegMover(args.dataset_root, unzip_paths).move_all()
-    print("Generate masks for MoNuSeg")
-    MoNuSegMaskGenerator(args.dataset_root).generate_masks()
-    print("Creating YOLO compatible training data for MoNuSeg")
-    MoNuSegYolofier(args.dataset_root).yolofy()
 
 def get_dataset_class(dataset: str, class_type: str):
     module = importlib.import_module("cnsbench.datasets")
@@ -63,7 +51,7 @@ def get_args() -> argparse.Namespace:
     # parser.add_argument("--masks-det", action="store_true", help="Creates detection masks for the dataset")
 
     args = parser.parse_args()
-    
+
     # Allows .tif to serve as the default mask extension
     if args.datasets is None:
         args.datasets = DATASETS
