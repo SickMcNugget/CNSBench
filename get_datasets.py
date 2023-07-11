@@ -1,29 +1,55 @@
 from pathlib import Path
 import argparse
-from cnsbench.datasets import MoNuSegDownloader, Unzipper
+import importlib
+from cnsbench.datasets import MoNuSegDownloader, MoNuSegMaskGenerator, MoNuSegYolofier, Unzipper, MoNuSegMover
 
 def main(args: argparse.Namespace):
-    if "MoNuSeg" in args.datasets:
-        get_monuseg(args)
-    
-    if "MoNuSeg" in args.datasets:
-        ...
-    if "MoNuSeg" in args.datasets:
-        ...
-    if "MoNuSeg" in args.datasets:
-        ...
+    for dataset in args.datasets:
+        print(f"-- {dataset} --")
+        get_dataset(dataset, args)
+
+def get_dataset(dataset: str, args: argparse.Namespace):
+    print(f"Attempting to download {dataset}")
+    downloader_cls = get_dataset_class(dataset, "Downloader")
+    zip_paths = downloader_cls().download()
+
+    print(f"\nUnzipping {dataset}")
+    unzip_paths = Unzipper(zip_paths).unzip()
+
+    print(f"\nOrganising {dataset}")
+    mover_cls = get_dataset_class(dataset, "Mover")
+    mover_cls(args.dataset_root, unzip_paths).move_all()
+
+    print(f"\nGenerate masks for {dataset}")
+    mask_generator_cls = get_dataset_class(dataset, "MaskGenerator")
+    mask_generator_cls(args.dataset_root).generate_masks()
+
+    print(f"\nCreating YOLO compatible training data for {dataset}\n")
+    yolofier_cls = get_dataset_class(dataset, "Yolofier")
+    yolofier_cls(args.dataset_root).yolofy()
 
 def get_monuseg(args: argparse.Namespace):
+    print("Attempting to download MoNuSeg")
     zip_paths = MoNuSegDownloader().download()
+    print("Unzipping MoNuSeg")
     unzip_paths = Unzipper(zip_paths).unzip()
-    # mover = MoNuSegMover()
+    print("Organising MoNuSeg")
+    MoNuSegMover(args.dataset_root, unzip_paths).move_all()
+    print("Generate masks for MoNuSeg")
+    MoNuSegMaskGenerator(args.dataset_root).generate_masks()
+    print("Creating YOLO compatible training data for MoNuSeg")
+    MoNuSegYolofier(args.dataset_root).yolofy()
 
+def get_dataset_class(dataset: str, class_type: str):
+    module = importlib.import_module("cnsbench.datasets")
+    dataset_class = getattr(module, f"{dataset}{class_type}")
+    return dataset_class
 
 def get_args() -> argparse.Namespace:
-    DATASETS = ["MoNuSeg", "MoNUSAC", "TNBC", "CryoNuSeg"]
+    DATASETS = ["MoNuSeg", "MoNuSAC", "TNBC", "CryoNuSeg"]
     parser = argparse.ArgumentParser()
     parser.add_argument("--datasets", action="append", choices=DATASETS, help="The datasets available for download and preparation")
-    # parser.add_argument("--out-path", type=Path, help="The path to store the output data")
+    parser.add_argument("--dataset-root", default=Path("."), type=Path, help="The path to output the dataset")
     # parser.add_argument("--mask-path", type=Path, help="The path to store generated masks")
     # parser.add_argument("--profile-path", type=Path, default="profile_stats", help="Where to save profiling data")
     # parser.add_argument("--yolofy-path", type=Path, help="The path to store the yolofied version of the dataset")
