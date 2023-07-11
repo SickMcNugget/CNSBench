@@ -1,6 +1,7 @@
-MoNuSeg*
-MoNuSAC*
-*.zip
+MoNuSeg
+MoNuSAC
+zips
+unzips
 profile
 pca/
 *.pyc
