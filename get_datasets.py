@@ -4,7 +4,7 @@ import importlib
 from cnsbench.datasets import Unzipper
 
 def main(args: argparse.Namespace):
-    for dataset in ["TNBC"]:#args.datasets:
+    for dataset in ["CryoNuSeg"]:#args.datasets:
         print(f"-- {dataset} --")
         get_dataset(dataset, args)
 
@@ -12,6 +12,8 @@ def get_dataset(dataset: str, args: argparse.Namespace):
     print(f"Attempting to download {dataset}")
     downloader_cls = get_dataset_class(dataset, "Downloader")
     zip_paths = downloader_cls().download()
+    if zip_paths is None:
+        return None
 
     print(f"\nUnzipping {dataset}")
     unzip_paths = Unzipper(zip_paths).unzip()
