@@ -146,7 +146,7 @@ class TNBCDownloader(Downloader):
             subprocess.run(["zenodo_get", "-o", self.prefix, zip_source])
         except FileNotFoundError:
             pass
-        return [self.prefix / self.expected_zip_names]
+        return [self.prefix / self.expected_zip_names[0]]
 
 class Unzipper:
     def __init__(self, zip_paths: list[Path]):
@@ -344,13 +344,55 @@ class TNBCMover(Mover):
             "test": "TNBC_NucleiSegmentation"
         }
 
+    def copy_folder(self, folder: Path, dest: Path):
+        for image in folder.iterdir():
+            self.copy_if_new(image, dest)
+
     def move_train(self, train_path: Path, unzip_path: Path):
-        pass
+        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
+        train_folders = slide_folders[:6]
+        for train_folder in train_folders:
+            self.copy_folder(train_folder, train_path)
+        
+        #TNBC is organised in an odd fashion, so these methods reflect it.
+        train_mask_path = self.dataset_root / "masks" / "train"
+        if not train_mask_path.exists():
+            train_mask_path.mkdir(parents=True)
+
+        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
+        train_mask_folders = mask_folders[:6]
+        for train_mask_folder in train_mask_folders:
+            self.copy_folder(train_mask_folder, train_mask_path)
 
     def move_val(self, val_path: Path, unzip_path: Path):
-        ...
+        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
+        val_folders = [slide_folders[i] for i in [6, 9, 10]]
+        for val_folder in val_folders:
+            self.copy_folder(val_folder, val_path)
+
+        val_mask_path = self.dataset_root / "masks" / "val"
+        if not val_mask_path.exists():
+            val_mask_path.mkdir(parents=True)
+
+        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
+        val_mask_folders = [mask_folders[i] for i in [6, 9, 10]]
+        for val_mask_folder in val_mask_folders:
+            self.copy_folder(val_mask_folder, val_mask_path)
+
     def move_test(self, test_path: Path, unzip_path: Path):
-        ...
+        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
+        test_folders = [slide_folders[i] for i in [7, 8]]
+        for test_folder in test_folders:
+            self.copy_folder(test_folder, test_path)
+        
+        test_mask_path = self.dataset_root / "masks" / "test"
+        if not test_mask_path.exists():
+            test_mask_path.mkdir(parents=True)
+
+        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
+        test_mask_folders = [mask_folders[i] for i in [7, 8]]
+        for test_mask_folder in test_mask_folders:
+            self.copy_folder(test_mask_folder, test_mask_path)
 
 class MaskGenerator(ABC):
     def __init__(self, dataset_root: str | Path):
@@ -474,6 +516,22 @@ class MoNuSACMaskGenerator(MaskGenerator):
 
         filename = str((mask_path / patient.stem).with_suffix(".png"))
         cv2.imwrite(filename, mask)
+
+class TNBCMaskGenerator(MaskGenerator):
+    def __init__(self, dataset_root: str | Path):
+        super().__init__(dataset_root)
+
+    def _get_pooldata(self, mask_path: Path, _):
+        masks = list(mask_path.glob("*.png"))
+        return [(mask_path, mask) for mask in masks]
+    
+    def _generate_mask(self, _, mask: Path):
+        img = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
+        img[img == 255] = 1
+        cv2.imwrite(str(mask), img)
+
+    def should_generate(self, mask_paths: list[Path]):
+        return True
 
 class XMLParser(ABC):
     def __init__(self):
@@ -697,4 +755,49 @@ class MoNuSACYolofier(Yolofier):
             # close off the nucleus polygon (using first vertex of contour)
             annotations += f" {nucleus[0, 0]} {nucleus[0, 1]}\n"
 
+        return annotations
+    
+class TNBCYolofier(Yolofier):
+    def __init__(self, dataset_root: str | Path):
+        super().__init__(dataset_root)
+
+    def _get_pooldata(self, yolofy_path: Path, original_path: Path):
+        patient_imgs = sorted(original_path.glob("*.png"))
+        mask_path = self.dataset_root / "masks" / original_path.stem
+        patient_masks = sorted(mask_path.glob("*.png"))
+        return [(yolofy_path, patient_img, patient_mask)
+                for patient_img, patient_mask
+                in zip(patient_imgs, patient_masks)]
+    
+    def _yolofy(self, yolofy_path: Path, patient_img: Path, patient_mask: Path):
+        # original image is already a PNG
+        shutil.copy(patient_img, (yolofy_path / patient_img.name))
+
+        mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
+        height, width = mask.shape[:2]
+        
+        nuclei = cv2.findContours(mask,
+                                    cv2.RETR_EXTERNAL,
+                                    cv2.CHAIN_APPROX_SIMPLE)[0]
+        
+        normalised_nuclei = []
+        for nucleus in nuclei:
+            float_nucleus = nucleus.astype(float)
+            float_nucleus[:,:,0] /= width
+            float_nucleus[:,:,1] /= height
+            normalised_nuclei.append(float_nucleus)
+
+        annotations = self.nuclei_to_annotations(normalised_nuclei)
+
+        filename = yolofy_path / patient_mask.with_suffix(".txt").name
+        with open(filename, "w") as f:
+            f.write(annotations)
+
+    def nuclei_to_annotations(self, nuclei):
+        annotations = ""
+        for nucleus in nuclei:
+            annotations += "0"
+            for vertex in nucleus:
+                annotations += f" {vertex[0, 0]} {vertex[0, 1]}"
+            annotations += f" {nucleus[0, 0, 0]} {nucleus[0, 0, 1]}\n"
         return annotations
