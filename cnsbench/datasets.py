@@ -295,7 +295,7 @@ class MoNuSACMover(Mover):
         for unzip_path in self.unzip_paths:
             if self.expected_zips["train"] in str(unzip_path):
 
-                patients = list((unzip_path / unzip_path.stem).glob("**/*.xml"))
+                patients = list((unzip_path / unzip_path.stem).glob("*"))
                 train_patients = patients[:-11]
 
                 pooldata = [(patient, train_path) for patient in train_patients]
@@ -315,7 +315,7 @@ class MoNuSACMover(Mover):
         for unzip_path in self.unzip_paths:
             if self.expected_zips["val"] in str(unzip_path):
 
-                patients = list((unzip_path / unzip_path.stem).glob("**/*.xml"))
+                patients = list((unzip_path / unzip_path.stem).glob("*"))
                 val_patients = patients[-11:]
 
                 pooldata = [(patient, val_path) for patient in val_patients]
@@ -547,10 +547,6 @@ class Yolofier(ABC):
                       self.dataset_root / "yolo" / "val",
                       self.dataset_root / "yolo" / "test"]
         
-        mask_paths = [self.dataset_root / "masks" / "train",
-                      self.dataset_root / "masks" / "val",
-                      self.dataset_root / "masks" / "test"]
-
         original_paths = [self.dataset_root / "original" / "train",
                           self.dataset_root / "original" / "val",
                           self.dataset_root / "original" / "test"]
@@ -559,11 +555,11 @@ class Yolofier(ABC):
             print("Yolofied data already exists, skipping...")
             return
 
-        for yolofy_path, mask_path, original_path in zip(yolofy_paths, mask_paths, original_paths):
+        for yolofy_path, original_path in zip(yolofy_paths, original_paths):
             if not yolofy_path.exists():
                 yolofy_path.mkdir(parents=True)
             
-            pooldata = self._get_pooldata(yolofy_path, mask_path, original_path)
+            pooldata = self._get_pooldata(yolofy_path, original_path)
             with Pool() as pool:
                 for _ in tqdm(pool.istarmap(self._yolofy, pooldata), total=len(pooldata)):
                     pass
@@ -575,7 +571,7 @@ class Yolofier(ABC):
         return False
 
     @abstractmethod
-    def _get_pooldata(self, yolofy_path: Path, mask_path: Path, original_path: Path):
+    def _get_pooldata(self, yolofy_path: Path, original_path: Path, *args):
         """Return data needed for mask generation as a list of tuples"""
 
     @abstractmethod
@@ -585,13 +581,14 @@ class Yolofier(ABC):
 class MoNuSegYolofier(Yolofier):
     def __init__(self, dataset_root: str | Path):
         super().__init__(dataset_root)
+        self.xml_parser = MoNuSegXMLParser()
 
-    def _get_pooldata(self, yolofy_path: Path, mask_path: Path, original_path: Path):
+    def _get_pooldata(self, yolofy_path: Path, original_path: Path):
         patient_images = sorted(original_path.glob("*.tif"))
-        patient_masks = sorted(mask_path.glob("*.png"))
-        pooldata = [(yolofy_path, patient_image, patient_mask) 
-                     for patient_image, patient_mask 
-                     in zip(patient_images, patient_masks)]
+        patient_xmls = sorted(original_path.glob("*.xml"))
+        pooldata = [(yolofy_path, patient_image, patient_xml) 
+                     for patient_image, patient_xml 
+                     in zip(patient_images, patient_xmls)]
         return pooldata
 
     def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_mask: Path):
@@ -605,17 +602,19 @@ class MoNuSegYolofier(Yolofier):
 
         height, width = patient_img.shape[:2]
 
-        mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
-        contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+        # mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
+        # contours = cv2.findContours(mask, 
+        #                             cv2.RETR_EXTERNAL, 
+        #                             cv2.CHAIN_APPROX_SIMPLE)[0]
 
-        normalised_contours = []
-        for contour in contours:
-            float_contour = contour.astype(float)
-            float_contour[:,0,0] = float_contour[:,0,0] / width
-            float_contour[:,0,1] = float_contour[:,0,1] / height
-            normalised_contours.append(float_contour)
+        # normalised_contours = []
+        # for contour in contours:
+        #     float_contour = contour.astype(float)
+        #     float_contour[:,0,0] = float_contour[:,0,0] / width
+        #     float_contour[:,0,1] = float_contour[:,0,1] / height
+        #     normalised_contours.append(float_contour)
 
-        annotations = self.contours_to_annotations(normalised_contours)
+        # annotations = self.contours_to_annotations(normalised_contours)
 
         filename = (yolofy_path / patient_image.stem).with_suffix(".txt")
         with open(filename, "w") as f:
@@ -629,59 +628,62 @@ class MoNuSegYolofier(Yolofier):
             for vertex in contour:
                 annotations += f" {vertex[0,0]} {vertex[0,1]}"
             # close off the nucleus polygon (using first vertex of contour)
-            annotations += f" {contour[0, 0, 0]} {contour[0, 0, 1]}"
-            annotations += "\n"
+            annotations += f" {contour[0, 0, 0]} {contour[0, 0, 1]}\n"
 
         return annotations
     
 class MoNuSACYolofier(Yolofier):
     def __init__(self, dataset_root: str | Path):
         super().__init__(dataset_root)
+        self.xml_parser = MoNuSACXMLParser()
+        self.label_map = {'Epithelial': 1,
+                          'Lymphocyte': 2,
+                          'Neutrophil': 3,
+                          'Macrophage': 4,
+                          'Ambiguous': 5,}
 
-    def _get_pooldata(self, yolofy_path: Path, mask_path: Path, original_path: Path):
-        patient_images = sorted(original_path.glob("*.tif"))
-        patient_masks = sorted(mask_path.glob("*.png"))
-        pooldata = [(yolofy_path, patient_image, patient_mask) 
-                     for patient_image, patient_mask 
-                     in zip(patient_images, patient_masks)]
+
+    def _get_pooldata(self, yolofy_path: Path, original_path: Path):
+        patient_images = sorted(original_path.glob("*.svs"))
+        patient_xmls = sorted(original_path.glob("*.xml"))
+        pooldata = [(yolofy_path, patient_image, patient_xml) 
+                     for patient_image, patient_xml 
+                     in zip(patient_images, patient_xmls)]
         return pooldata
 
-    def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_mask: Path):
-        if not patient_image.exists() or not patient_mask.exists():
+    def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_xml: Path):
+        if not patient_image.exists() or not patient_xml.exists():
             return
 
         # YOLOv8 requires .png images
-        patient_img = cv2.imread(str(patient_image))
+        slide = OpenSlide(str(patient_image))
         filename = str((yolofy_path / patient_image.stem).with_suffix(".png"))
-        cv2.imwrite(filename, patient_img)
+        slide.get_thumbnail(slide.level_dimensions[0]).save(filename)
+        width, height = slide.level_dimensions[0]
+        slide.close()
 
-        height, width = patient_img.shape[:2]
-
-        mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
-        contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
-
+        nuclei = self.xml_parser.parse(patient_xml)
+        
         normalised_contours = []
-        for contour in contours:
-            float_contour = contour.astype(float)
-            float_contour[:,0,0] = float_contour[:,0,0] / width
-            float_contour[:,0,1] = float_contour[:,0,1] / height
-            normalised_contours.append(float_contour)
+        for nucleus, class_label in nuclei:
+            nucleus[:,0] /= width
+            nucleus[:,1] /= height
+            normalised_contours.append((nucleus, class_label))
 
-        annotations = self.contours_to_annotations(normalised_contours)
+        annotations = self.nuclei_to_annotations(normalised_contours)
 
         filename = (yolofy_path / patient_image.stem).with_suffix(".txt")
         with open(filename, "w") as f:
             f.write(annotations)
 
-    def contours_to_annotations(self, contours: np.ndarray) -> str:
+    def nuclei_to_annotations(self, nuclei: list[tuple[np.ndarray, str]]) -> str:
         annotations = ""
         
-        for contour in contours:
-            annotations += "0"
-            for vertex in contour:
-                annotations += f" {vertex[0,0]} {vertex[0,1]}"
+        for nucleus, class_label in nuclei:
+            annotations += str(self.label_map[class_label])
+            for vertex in nucleus:
+                annotations += f" {vertex[0]} {vertex[1]}"
             # close off the nucleus polygon (using first vertex of contour)
-            annotations += f" {contour[0, 0, 0]} {contour[0, 0, 1]}"
-            annotations += "\n"
+            annotations += f" {nucleus[0, 0]} {nucleus[0, 1]}\n"
 
         return annotations
