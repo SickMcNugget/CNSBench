@@ -88,7 +88,10 @@ class Downloader(ABC):
 
         zip_paths = []
         for zip_source in self.zip_sources:
-            zip_paths.append(self._download(zip_source))
+            zip_path = self._download(zip_source)
+            if zip_path is None:
+                return None
+            zip_paths.append(zip_path)
 
         self.zip_paths = [self.prefix / zip_path.name for zip_path in zip_paths]
 
@@ -146,7 +149,32 @@ class TNBCDownloader(Downloader):
             subprocess.run(["zenodo_get", "-o", self.prefix, zip_source])
         except FileNotFoundError:
             pass
-        return [self.prefix / self.expected_zip_names[0]]
+        return self.prefix / self.expected_zip_names[0]
+
+class CryoNuSegDownloader(Downloader):
+    def __init__(self, zip_sources: list[str] = ["ipateam/segmentation-of-nuclei-in-cryosectioned-he-images"]):
+        super().__init__(zip_sources)
+        self.expected_zip_names = ["segmentation-of-nuclei-in-cryosectioned-he-images.zip"]
+
+    def _download(self, zip_source: str) -> Path:
+        try:
+            ret = subprocess.run(["kaggle", 
+                                     "datasets", 
+                                     "download", 
+                                     "-p",
+                                     str(self.prefix),
+                                     "-d", 
+                                     zip_source],
+                                     stderr=subprocess.DEVNULL)
+            ret.check_returncode()
+        except FileNotFoundError:
+            pass
+        except subprocess.CalledProcessError:
+                print("Please configure ~/.kaggle/kaggle.json. Follow the instructions" \
+                      + " on their website.")
+                return None
+
+        return self.prefix / self.expected_zip_names[0]
 
 class Unzipper:
     def __init__(self, zip_paths: list[Path]):
@@ -393,6 +421,66 @@ class TNBCMover(Mover):
         test_mask_folders = [mask_folders[i] for i in [7, 8]]
         for test_mask_folder in test_mask_folders:
             self.copy_folder(test_mask_folder, test_mask_path)
+
+class TNBCMover(Mover):
+    def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
+        super().__init__(dataset_root, unzip_paths)
+        self.expected_zips = {
+            "train": "TNBC_NucleiSegmentation",
+            "val": "TNBC_NucleiSegmentation",
+            "test": "TNBC_NucleiSegmentation"
+        }
+
+    def copy_folder(self, folder: Path, dest: Path):
+        for image in folder.iterdir():
+            self.copy_if_new(image, dest)
+
+    def move_train(self, train_path: Path, unzip_path: Path):
+        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
+        train_folders = slide_folders[:6]
+        for train_folder in train_folders:
+            self.copy_folder(train_folder, train_path)
+        
+        #TNBC is organised in an odd fashion, so these methods reflect it.
+        train_mask_path = self.dataset_root / "masks" / "train"
+        if not train_mask_path.exists():
+            train_mask_path.mkdir(parents=True)
+
+        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
+        train_mask_folders = mask_folders[:6]
+        for train_mask_folder in train_mask_folders:
+            self.copy_folder(train_mask_folder, train_mask_path)
+
+    def move_val(self, val_path: Path, unzip_path: Path):
+        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
+        val_folders = [slide_folders[i] for i in [6, 9, 10]]
+        for val_folder in val_folders:
+            self.copy_folder(val_folder, val_path)
+
+        val_mask_path = self.dataset_root / "masks" / "val"
+        if not val_mask_path.exists():
+            val_mask_path.mkdir(parents=True)
+
+        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
+        val_mask_folders = [mask_folders[i] for i in [6, 9, 10]]
+        for val_mask_folder in val_mask_folders:
+            self.copy_folder(val_mask_folder, val_mask_path)
+
+    def move_test(self, test_path: Path, unzip_path: Path):
+        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
+        test_folders = [slide_folders[i] for i in [7, 8]]
+        for test_folder in test_folders:
+            self.copy_folder(test_folder, test_path)
+        
+        test_mask_path = self.dataset_root / "masks" / "test"
+        if not test_mask_path.exists():
+            test_mask_path.mkdir(parents=True)
+
+        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
+        test_mask_folders = [mask_folders[i] for i in [7, 8]]
+        for test_mask_folder in test_mask_folders:
+            self.copy_folder(test_mask_folder, test_mask_path)
+
 
 class MaskGenerator(ABC):
     def __init__(self, dataset_root: str | Path):
