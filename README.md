@@ -1,8 +1,9 @@
 Tested with python 3.9.15
 
 # Installation
-With pip
+Please use miniconda
 ```bash
+sudo apt install openslide-tools #debian/ubuntu
 pip install -r requirements.txt
 ```
 
