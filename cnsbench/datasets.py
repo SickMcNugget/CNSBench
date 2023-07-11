@@ -3,6 +3,7 @@ from __future__ import annotations
 #builtins
 from abc import ABC, abstractmethod
 from pathlib import Path
+import subprocess
 from zipfile import ZipFile
 import shutil
 import multiprocessing.pool as mpp
@@ -47,8 +48,8 @@ mpp.Pool.istarmap = istarmap
 
 
 class Downloader(ABC):
-    def __init__(self, zip_ids: list[str]):
-        self.zip_ids: list[str] = zip_ids
+    def __init__(self, zip_sources: list[str]):
+        self.zip_sources: list[str] = zip_sources
         self.zip_paths: list[Path] = []
         self.prefix: Path = Path("zips")
         self.expected_zip_names = []
@@ -64,12 +65,12 @@ class Downloader(ABC):
             self._prefix.mkdir(parents=True)
 
     @property
-    def zip_ids(self):
-        return self._zip_ids
+    def zip_sources(self):
+        return self._zip_sources
 
-    @zip_ids.setter
-    def zip_ids(self, value):
-        self._zip_ids = value
+    @zip_sources.setter
+    def zip_sources(self, value):
+        self._zip_sources = value
 
     @property
     def zip_paths(self):
@@ -86,8 +87,8 @@ class Downloader(ABC):
             return self.zip_paths
 
         zip_paths = []
-        for zip_id in self.zip_ids:
-            zip_paths.append(self._download(zip_id))
+        for zip_source in self.zip_sources:
+            zip_paths.append(self._download(zip_source))
 
         self.zip_paths = [self.prefix / zip_path.name for zip_path in zip_paths]
 
@@ -97,23 +98,25 @@ class Downloader(ABC):
 
         return self.zip_paths
 
-    @abstractmethod
     def _should_download(self) -> bool:
-        """Check if zips already exist or need to be downloaded"""
+        for zip_name in self.expected_zip_names:
+            if not (self.prefix / zip_name).exists():
+                return True
+        return False
 
     @abstractmethod
-    def _download(self, zip_id: str) -> Path:
+    def _download(self, zip_source: str) -> Path:
         """Downloads a zip file from it's online id and returns the downloaded path"""
 
 class MoNuSegDownloader(Downloader):
-    def __init__(self, zip_ids: list[str] = ["1ZgqFJomqQGNnsx7w7QBzQQMVA16lbVCA", 
+    def __init__(self, zip_sources: list[str] = ["1ZgqFJomqQGNnsx7w7QBzQQMVA16lbVCA", 
                                              "1NKkSQ5T0ZNQ8aUhh0a8Dt2YKYCQXIViw"]):
-        super().__init__(zip_ids)
+        super().__init__(zip_sources)
         self.expected_zip_names = ["MoNuSeg 2018 Training Data.zip",
                                    "MoNuSegTestData.zip"]
 
-    def _download(self, zip_id: str) -> Path:
-        zip_path = gdown.download(id=zip_id)
+    def _download(self, zip_source: str) -> Path:
+        zip_path = gdown.download(id=zip_source)
         return Path(zip_path)
     
     def _should_download(self) -> bool:
@@ -123,21 +126,27 @@ class MoNuSegDownloader(Downloader):
         return False
 
 class MoNuSACDownloader(Downloader):
-    def __init__(self, zip_ids: list[str] = ["1lxMZaAPSpEHLSxGA9KKMt_r-4S8dwLhq", 
+    def __init__(self, zip_sources: list[str] = ["1lxMZaAPSpEHLSxGA9KKMt_r-4S8dwLhq", 
                                              "1G54vsOdxWY1hG7dzmkeK3r0xz9s-heyQ"]):
-        super().__init__(zip_ids)
+        super().__init__(zip_sources)
         self.expected_zip_names = ["MoNuSAC_images_and_annotations.zip",
                                    "MoNuSAC Testing Data and Annotations.zip"]
 
-    def _download(self, zip_id: str) -> Path:
-        zip_path = gdown.download(id=zip_id)
+    def _download(self, zip_source: str) -> Path:
+        zip_path = gdown.download(id=zip_source)
         return Path(zip_path)
     
-    def _should_download(self) -> bool:
-        for zip_name in self.expected_zip_names:
-            if not (self.prefix / zip_name).exists():
-                return True
-        return False
+class TNBCDownloader(Downloader):
+    def __init__(self, zip_sources: list[str] = ["10.5281/zenodo.1175282"]):
+        super().__init__(zip_sources)
+        self.expected_zip_names = ["TNBC_NucleiSegmentation.zip"]
+
+    def _download(self, zip_source: str) -> Path:
+        try:
+            subprocess.run(["zenodo_get", "-o", self.prefix, zip_source])
+        except FileNotFoundError:
+            pass
+        return [self.prefix / self.expected_zip_names]
 
 class Unzipper:
     def __init__(self, zip_paths: list[Path]):
@@ -168,10 +177,18 @@ class Unzipper:
         return unzip_paths
     
     def unzip(self) -> list[Path]:
-        for zip_path, unzip_path in zip(self.zip_paths, self.unzip_paths):
-            with ZipFile(zip_path, "r") as zfile:
-                zfile.extractall(unzip_path)
-
+        need_unzip = False
+        for unzip_path in self.unzip_paths:
+            if not unzip_path.exists():
+                need_unzip = True
+        
+        if need_unzip:
+            for zip_path, unzip_path in zip(self.zip_paths, self.unzip_paths):
+                with ZipFile(zip_path, "r") as zfile:
+                    zfile.extractall(unzip_path)
+        else:
+            print("Unzipped data already present, skipping...")
+        
         return self.unzip_paths
     
 class Mover(ABC):
@@ -193,9 +210,9 @@ class Mover(ABC):
         if not self._dataset_root.exists():
             self._dataset_root.mkdir(parents=True)
 
-    def move_if_new(self, src: Path, dest: Path):
+    def copy_if_new(self, src: Path, dest: Path):
         if not (dest / src.name).exists():
-            shutil.move(src, dest)
+            shutil.copy(src, dest)
 
     def should_move(self, original_paths: list[Path]):
         for path in original_paths:
@@ -216,20 +233,30 @@ class Mover(ABC):
             if not path.exists():
                 path.mkdir(parents=True)
 
-        self.move_train()
-        self.move_valid()
-        self.move_test()
+        for original_path in original_paths:
+            split = original_path.stem
+            for unzip_path in self.unzip_paths:
+                if self.expected_zips[split] in str(unzip_path):
+                    move_fn = getattr(self, f"move_{split}")
+                    move_fn(original_path, unzip_path)
+            
+    # def move_d(self):
+    #     train_path = self.dataset_root / "original" / "train"
+
+    #     for unzip_path in self.unzip_paths:
+    #         if self.expected_zips["train"] in str(unzip_path):
+    #             self._move_train(train_path, unzip_path)
 
     @abstractmethod
-    def move_train(self):
+    def move_train(self, train_path: Path, unzip_path: Path):
         """Move the dataset's training data to its new directory"""
 
     @abstractmethod
-    def move_valid(self):
+    def move_val(self, val_path: Path, unzip_path: Path):
         """Move the dataset's validation data to its new directory"""
 
     @abstractmethod
-    def move_test(self):
+    def move_test(self, test_path: Path, unzip_path: Path):
         """Move the dataset's testing data to its new directory"""
 
 class MoNuSegMover(Mover):
@@ -241,43 +268,31 @@ class MoNuSegMover(Mover):
             "test": "MoNuSegTestData"
         }
 
-    def move_train(self):
-        train_path = self.dataset_root / "original" / "train"
+    def move_train(self, train_path: Path, unzip_path: Path):
+        xmls = sorted((unzip_path / unzip_path.stem).glob("**/*.xml"))
+        tifs = sorted((unzip_path / unzip_path.stem).glob("**/*.tif"))
+        train_xmls = xmls[:-7]
+        train_tifs = tifs[:-7]
 
-        for unzip_path in self.unzip_paths:
-            if self.expected_zips["train"] in str(unzip_path):
-                xmls = sorted((unzip_path / unzip_path.stem).glob("**/*.xml"))
-                tifs = sorted((unzip_path / unzip_path.stem).glob("**/*.tif"))
-                train_xmls = xmls[:-7]
-                train_tifs = tifs[:-7]
+        for xml, tif in zip(train_xmls, train_tifs):
+            self.copy_if_new(xml, train_path)
+            self.copy_if_new(tif, train_path)
 
-                for xml, tif in zip(train_xmls, train_tifs):
-                    self.move_if_new(xml, train_path)
-                    self.move_if_new(tif, train_path)
+    def move_val(self, val_path: Path, unzip_path: Path):
+        xmls = sorted((unzip_path / unzip_path.stem).glob("**/*.xml"))
+        tifs = sorted((unzip_path / unzip_path.stem).glob("**/*.tif"))
+        val_xmls = xmls[-7:]
+        val_tifs = tifs[-7:]
 
-    def move_valid(self):
-        val_path = self.dataset_root / "original" / "val"
-        
-        for unzip_path in self.unzip_paths:
-            if self.expected_zips["val"] in str(unzip_path):
-                xmls = sorted((unzip_path / unzip_path.stem).glob("**/*.xml"))
-                tifs = sorted((unzip_path / unzip_path.stem).glob("**/*.tif"))
-                val_xmls = xmls[-7:]
-                val_tifs = tifs[-7:]
-
-                for xml, tif in zip(val_xmls, val_tifs):
-                    self.move_if_new(xml, val_path)
-                    self.move_if_new(tif, val_path)
+        for xml, tif in zip(val_xmls, val_tifs):
+            self.copy_if_new(xml, val_path)
+            self.copy_if_new(tif, val_path)
 
 
-    def move_test(self):
-        test_path = self.dataset_root / "original" / "test"
-        
-        for unzip_path in self.unzip_paths:
-            if self.expected_zips["test"] in str(unzip_path):
-                test_files = (unzip_path / unzip_path.stem).glob("*")
-                for test_file in test_files:
-                    self.move_if_new(test_file, test_path)
+    def move_test(self, test_path: Path, unzip_path: Path):
+        test_files = (unzip_path / unzip_path.stem).glob("*")
+        for test_file in test_files:
+            self.copy_if_new(test_file, test_path)
 
 class MoNuSACMover(Mover):
     def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
@@ -286,55 +301,56 @@ class MoNuSACMover(Mover):
             "train": "MoNuSAC_images_and_annotations",
             "val": "MoNuSAC_images_and_annotations",
             "test": "MoNuSAC Testing Data and Annotations"
-
         }
-
-    def move_train(self):
-        train_path = self.dataset_root / "original" / "train"
-
-        for unzip_path in self.unzip_paths:
-            if self.expected_zips["train"] in str(unzip_path):
-
-                patients = list((unzip_path / unzip_path.stem).glob("*"))
-                train_patients = patients[:-11]
-
-                pooldata = [(patient, train_path) for patient in train_patients]
-                with Pool() as pool:
-                    for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
-                                  total=len(pooldata)):
-                        pass
 
     def move_patient(self, patient: Path, dest: Path):
         for file in patient.iterdir():
-            if not (dest / file.name).exists():
-                shutil.move(file, dest)
+            self.copy_if_new(file, dest)
 
-    def move_valid(self):
-        val_path = self.dataset_root / "original" / "val"
+    def move_train(self, train_path: Path, unzip_path: Path):
+        patients = list((unzip_path / unzip_path.stem).glob("*"))
+        train_patients = patients[:-11]
 
-        for unzip_path in self.unzip_paths:
-            if self.expected_zips["val"] in str(unzip_path):
+        pooldata = [(patient, train_path) for patient in train_patients]
+        with Pool() as pool:
+            for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
+                            total=len(pooldata)):
+                pass
 
-                patients = list((unzip_path / unzip_path.stem).glob("*"))
-                val_patients = patients[-11:]
+    def move_val(self, val_path: Path, unzip_path: Path):
+        patients = list((unzip_path / unzip_path.stem).glob("*"))
+        val_patients = patients[-11:]
 
-                pooldata = [(patient, val_path) for patient in val_patients]
-                with Pool() as pool:
-                    for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
-                                  total=len(pooldata)):
-                        pass
+        pooldata = [(patient, val_path) for patient in val_patients]
+        with Pool() as pool:
+            for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
+                            total=len(pooldata)):
+                pass
 
-    def move_test(self):
-        test_path = self.dataset_root / "original" / "test"
-        
-        for unzip_path in self.unzip_paths:
-            if self.expected_zips["test"] in str(unzip_path):
-                patients = (unzip_path / unzip_path.stem).glob("*")
-                pooldata = [(patient, test_path) for patient in patients]
-                with Pool() as pool:
-                    for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
-                                  total=len(pooldata)):
-                        pass
+    def move_test(self, test_path: Path, unzip_path: Path):
+        patients = (unzip_path / unzip_path.stem).glob("*")
+        pooldata = [(patient, test_path) for patient in patients]
+        with Pool() as pool:
+            for _ in tqdm(pool.istarmap(self.move_patient, pooldata), 
+                            total=len(pooldata)):
+                pass
+
+class TNBCMover(Mover):
+    def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
+        super().__init__(dataset_root, unzip_paths)
+        self.expected_zips = {
+            "train": "TNBC_NucleiSegmentation",
+            "val": "TNBC_NucleiSegmentation",
+            "test": "TNBC_NucleiSegmentation"
+        }
+
+    def move_train(self, train_path: Path, unzip_path: Path):
+        pass
+
+    def move_val(self, val_path: Path, unzip_path: Path):
+        ...
+    def move_test(self, test_path: Path, unzip_path: Path):
+        ...
 
 class MaskGenerator(ABC):
     def __init__(self, dataset_root: str | Path):
@@ -591,8 +607,8 @@ class MoNuSegYolofier(Yolofier):
                      in zip(patient_images, patient_xmls)]
         return pooldata
 
-    def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_mask: Path):
-        if not patient_image.exists() or not patient_mask.exists():
+    def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_xml: Path):
+        if not patient_image.exists() or not patient_xml.exists():
             return
 
         # YOLOv8 requires .png images
@@ -601,34 +617,29 @@ class MoNuSegYolofier(Yolofier):
         cv2.imwrite(filename, patient_img)
 
         height, width = patient_img.shape[:2]
+        nuclei = self.xml_parser.parse(patient_xml)
 
-        # mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
-        # contours = cv2.findContours(mask, 
-        #                             cv2.RETR_EXTERNAL, 
-        #                             cv2.CHAIN_APPROX_SIMPLE)[0]
+        normalised_nuclei = []
+        for nucleus in nuclei:
+            nucleus[:,0] /= width
+            nucleus[:,1] /= height
+            normalised_nuclei.append(nucleus)
 
-        # normalised_contours = []
-        # for contour in contours:
-        #     float_contour = contour.astype(float)
-        #     float_contour[:,0,0] = float_contour[:,0,0] / width
-        #     float_contour[:,0,1] = float_contour[:,0,1] / height
-        #     normalised_contours.append(float_contour)
-
-        # annotations = self.contours_to_annotations(normalised_contours)
+        annotations = self.nuclei_to_annotations(normalised_nuclei)
 
         filename = (yolofy_path / patient_image.stem).with_suffix(".txt")
         with open(filename, "w") as f:
             f.write(annotations)
 
-    def contours_to_annotations(self, contours: np.ndarray) -> str:
+    def nuclei_to_annotations(self, nuclei: np.ndarray) -> str:
         annotations = ""
         
-        for contour in contours:
+        for nucleus in nuclei:
             annotations += "0"
-            for vertex in contour:
-                annotations += f" {vertex[0,0]} {vertex[0,1]}"
+            for vertex in nucleus:
+                annotations += f" {vertex[0]} {vertex[1]}"
             # close off the nucleus polygon (using first vertex of contour)
-            annotations += f" {contour[0, 0, 0]} {contour[0, 0, 1]}\n"
+            annotations += f" {nucleus[0, 0]} {nucleus[0, 1]}\n"
 
         return annotations
     
