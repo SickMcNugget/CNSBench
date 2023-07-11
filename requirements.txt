@@ -10,3 +10,4 @@ gdown
 kaggle
 chardet
 shapely
+openslide-python
