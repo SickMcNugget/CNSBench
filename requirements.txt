@@ -9,5 +9,5 @@ zenodo_get
 gdown
 kaggle
 chardet
-shapely
 openslide-python
+ultralytics
