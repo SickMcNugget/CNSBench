@@ -1,69 +1,46 @@
-Tested with python 3.9.15
+Tested with python 3.10.
 
 # Installation
-Please use miniconda
+1. Some form of conda is required for this project.
+    - I recommend [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
+    - The larger [Anaconda](https://www.anaconda.com/download) is also an option
+2. Create a conda environment.
 ```bash
-sudo apt install openslide-tools #debian/ubuntu
+conda create --name cnsbench python=3.10 -y
+conda activate cnsbench
+```
+3. Install [Pytorch](https://pytorch.org/get-started/locally/) according to the instructions.
+```bash
+# As of 12 Jul 2023
+conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+```
+4. Install [MMSegmentation](https://github.com/open-mmlab/mmsegmentation/blob/main/docs/en/get_started.md#customize-installation) with the following instructions.
+```bash
+pip install -U openmim
+mim install mmengine
+mim install "mmcv>=2.0.0"
+git clone -b main https://github.com/open-mmlab/mmsegmentation.git
+cd mmsegmentation
+pip install -v -e .
+cd ..
+```
+
+5. Install left-over dependencies (OpenSlide, ultralytics, scikit-image)
+```bash
+conda install scikit-image ultralytics -c conda-forge -y
+sudo apt -y install openslide-tools #debian/ubuntu
 pip install -r requirements.txt
 ```
 
 # Usage
-Do everything (More explanation down below)
+Each script handles a step of the process, beginning with get_datasets.py
+
+## Datasets
+To download all datasets, simply run
 ```bash
-python get_monuseg.py -g -m -e tif -e png -e jpg -y --yolofy-det
+python get_datasets.py
 ```
-
-Download MoNuSeg
+To change the root directory for downloaded datasets, use the --dataset-root flag
 ```bash
-#Default
-python get_monuseg.py -g
-
-#Change zip path storage location
-python get_monuseg.py -g --zip-path "your_folder"
-
-#Change output folder location
-python get_monuseg.py -g --out-path "your_folder"
-```
-
-Generate binary masks
-```bash
-# Default (creates .tif files)
-python get_monuseg.py -m
-
-# as .tif, .png and .jpg
-python get_monuseg.py -m -e tif -e png -e jpg
-
-# Change the output path for mask data
-python get_monuseg.py -m --mask-path "your_folder"
-```
-
-Convert the dataset into yolo segmentation format
-```bash
-# Default
-python get_monuseg.py -y
-
-# Change the output path for yolo data
-# This will create the path <your_folder>/segment
-python get_monuseg.py -y --yolofy-path "your_folder"
-```
-
-Convert the dataset into yolo detection format
-```bash
-# Default
-python get_monuseg.py --yolofy-det
-
-# Change the output path for yolo data
-# This will create the path <your_folder>/detect
-python get_monuseg.py --yolofy-det --yolofy-path "your_folder"
-```
-
-Check profiling statistics (not particularly relevant)
-```bash
-#Default (saves to "profile_stats")
-python get_monuseg.py -p
-python show_stats.py
-
-#Change file name for saving statistics
-python get_monuseg.py -p --profile-path "your_file_name"
-python show_stats.py -p "your_file_name"
+python get_datasets.py --dataset-root ~/my_datasets # for example
 ```
