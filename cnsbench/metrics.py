@@ -1,4 +1,30 @@
+import cv2
 import numpy as np
+
+
+def calc_hausdorff(X: np.ndarray, y: np.ndarray, class_idx=1):
+    X_contours = cv2.findContours(X, 
+                                  cv2.RETR_EXTERNAL, 
+                                  cv2.CHAIN_APPROX_SIMPLE)[0]
+    y_contours = cv2.findContours(y, 
+                                  cv2.RETR_EXTERNAL, 
+                                  cv2.CHAIN_APPROX_SIMPLE)[0]
+
+    X_centroids = contours_to_centroids(X_contours)
+    y_centroids = contours_to_centroids(y_contours)
+
+
+def contours_to_centroids(contours: tuple):
+    centroids = np.empty((len(contours),2), dtype=np.uint16)
+    for i in range(len(contours)):
+        contour = contours[i]
+        M = cv2.moments(contour)
+        centroid_x = int(M['m10']/M['m00'])
+        centroid_y = int(M['m01']/M['m00'])
+        centroids[i,0] = centroid_x
+        centroids[i,1] = centroid_y
+    return centroids
+
 
 def calc_precision(X: np.ndarray, y: np.ndarray, class_idx=1):
     ground_truth = np.equal(X, class_idx)
