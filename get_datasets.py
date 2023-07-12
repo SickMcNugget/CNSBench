@@ -4,7 +4,7 @@ import importlib
 from cnsbench.datasets import Unzipper, DownloaderError
 
 def main(args: argparse.Namespace):
-    for dataset in ["CryoNuSeg"]:#args.datasets:
+    for dataset in args.datasets:
         print(f"-- {dataset} --")
         get_dataset(dataset, args)
 
@@ -42,21 +42,9 @@ def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--datasets", action="append", choices=DATASETS, help="The datasets available for download and preparation")
     parser.add_argument("--dataset-root", default=Path("."), type=Path, help="The path to output the dataset")
-    # parser.add_argument("--mask-path", type=Path, help="The path to store generated masks")
-    # parser.add_argument("--profile-path", type=Path, default="profile_stats", help="Where to save profiling data")
-    # parser.add_argument("--yolofy-path", type=Path, help="The path to store the yolofied version of the dataset")
-    # parser.add_argument("--label-value", type=int, default=255, help="The grayscale value for mask values")
-    # parser.add_argument("-e", "--ext", action="append", choices=["tif", "jpg", "png"], help="The file extensions to use for mask saving.")
-    # parser.add_argument("-p", "--profile", action="store_true", help="Enables the creation of profiling statistics for use with 'show_stats.py'")
-    # parser.add_argument("-g", "--get-monuseg", action="store_true", help="Gets MoNuSeg (this is generally only needed for the first run)")
-    # parser.add_argument("-y", "--yolofy", action="store_true", help="Creates a version of the dataset that uses yolo-style segmentation labels with .png images")
-    # parser.add_argument("-m", "--masks", action="store_true", help="Creates segmentation masks for the dataset")
-    # parser.add_argument("--yolofy-det", action="store_true", help="Creates a version of the dataset that uses yolo-style detection labels with .png images")
-    # parser.add_argument("--masks-det", action="store_true", help="Creates detection masks for the dataset")
 
     args = parser.parse_args()
 
-    # Allows .tif to serve as the default mask extension
     if args.datasets is None:
         args.datasets = DATASETS
     # argparse does not have an option for forcing unique values, so this is done 'manually'.
