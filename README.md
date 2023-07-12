@@ -12,7 +12,7 @@ conda activate cnsbench
 3. Install [Pytorch](https://pytorch.org/get-started/locally/) according to the instructions.
 ```bash
 # As of 12 Jul 2023
-conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia -y
 ```
 4. Install [MMSegmentation](https://github.com/open-mmlab/mmsegmentation/blob/main/docs/en/get_started.md#customize-installation) with the following instructions.
 ```bash
@@ -27,8 +27,8 @@ cd ..
 
 5. Install left-over dependencies (OpenSlide, ultralytics, scikit-image)
 ```bash
-conda install scikit-image ultralytics -c conda-forge -y
 sudo apt -y install openslide-tools #debian/ubuntu
+conda install scikit-image -c conda-forge -y
 pip install -r requirements.txt
 ```
 
