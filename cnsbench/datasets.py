@@ -564,6 +564,10 @@ class MoNuSACMaskGenerator(MaskGenerator):
                           'Neutrophil':3,
                           'Macrophage':4,
                           'Ambiguous':5,}
+        self.masks_1cls = self.dataset_root / "masks_1cls"
+        for mask_path in [self.masks_1cls / "train", self.masks_1cls / "val", self.masks_1cls / "test"]:
+            if not mask_path.exists():
+                mask_path.mkdir(parents=True)
     
     def _get_pooldata(self, mask_path: Path, original_path: Path):
         patients = sorted(original_path.glob("*.xml"))
@@ -587,6 +591,14 @@ class MoNuSACMaskGenerator(MaskGenerator):
             mask[rr,cc] = self.label_map[class_label]
 
         filename = str((mask_path / patient.stem).with_suffix(".png"))
+        cv2.imwrite(filename, mask)
+        
+        mask_1cls = np.zeros((height, width))
+        for nucleus, class_label in nuclei:
+            rr, cc = polygon(nucleus[:,1], nucleus[:,0], mask_1cls.shape)
+            mask_1cls[rr,cc] = 1
+
+        filename = str((self.masks_1cls / mask_path.stem / patient.stem).with_suffix(".png"))
         cv2.imwrite(filename, mask)
 
 class TNBCMaskGenerator(MaskGenerator):
@@ -799,6 +811,10 @@ class MoNuSACYolofier(Yolofier):
                           'Neutrophil': 3,
                           'Macrophage': 4,
                           'Ambiguous': 5,}
+        self.yolofy_1cls = self.dataset_root / "yolo_1cls"
+        for yolofy_path in [self.yolofy_1cls / "train", self.yolofy_1cls / "val", self.yolofy_1cls / "test"]:
+            if not yolofy_path.exists():
+                yolofy_path.mkdir(parents=True)
 
 
     def _get_pooldata(self, yolofy_path: Path, original_path: Path):
@@ -816,7 +832,10 @@ class MoNuSACYolofier(Yolofier):
         # YOLOv8 requires .png images
         slide = OpenSlide(str(patient_image))
         filename = str((yolofy_path / patient_image.stem).with_suffix(".png"))
+        filename_1cls = str((self.yolofy_1cls / yolofy_path.stem / patient_image.stem).with_suffix(".png"))
+
         slide.get_thumbnail(slide.level_dimensions[0]).save(filename)
+        slide.get_thumbnail(slide.level_dimensions[0]).save(filename_1cls)
         width, height = slide.level_dimensions[0]
         slide.close()
 
@@ -829,16 +848,25 @@ class MoNuSACYolofier(Yolofier):
             normalised_contours.append((nucleus, class_label))
 
         annotations = self.nuclei_to_annotations(normalised_contours)
+        annotations_1cls = self.nuclei_to_annotations(normalised_contours, multiclass=False)
 
         filename = (yolofy_path / patient_image.stem).with_suffix(".txt")
         with open(filename, "w") as f:
             f.write(annotations)
 
-    def nuclei_to_annotations(self, nuclei: list[tuple[np.ndarray, str]]) -> str:
+        filename_1cls = (self.yolofy_1cls / yolofy_path.stem / patient_image.stem).with_suffix(".txt")
+        with open(filename_1cls, "w") as f:
+            f.write(annotations_1cls)
+
+    def nuclei_to_annotations(self, nuclei: list[tuple[np.ndarray, str]], multiclass=True) -> str:
         annotations = ""
         
         for nucleus, class_label in nuclei:
-            annotations += str(self.label_map[class_label])
+            if multiclass:
+                annotations += str(self.label_map[class_label])
+            else:
+                annotations += "0"
+
             for vertex in nucleus:
                 annotations += f" {vertex[0]} {vertex[1]}"
             # close off the nucleus polygon (using first vertex of contour)
