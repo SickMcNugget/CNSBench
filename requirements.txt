@@ -11,3 +11,4 @@ kaggle
 chardet
 openslide-python
 ultralytics
+wandb
