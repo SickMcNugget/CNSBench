@@ -3,9 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-gt = cv2.imread("/home/joren/localhonours/code/CNSBench/MoNuSeg/masks/test/TCGA-2Z-A9J9-01A-01-TS1.png", cv2.IMREAD_GRAYSCALE)
-pred = cv2.imread("/home/joren/localhonours/code/NucleiSegmentation_mmseg/export/TCGA-2Z-A9J9-01A-01-TS1.png", cv2.IMREAD_GRAYSCALE)
-
 gt_labels, gt_instances = cv2.connectedComponents(gt)
 pred_labels, pred_instances = cv2.connectedComponents(pred)
 
