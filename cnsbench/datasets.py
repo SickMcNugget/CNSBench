@@ -599,7 +599,7 @@ class MoNuSACMaskGenerator(MaskGenerator):
             mask_1cls[rr,cc] = 1
 
         filename = str((self.masks_1cls / mask_path.stem / patient.stem).with_suffix(".png"))
-        cv2.imwrite(filename, mask)
+        cv2.imwrite(filename, mask_1cls)
 
 class TNBCMaskGenerator(MaskGenerator):
     def __init__(self, dataset_root: str | Path):
