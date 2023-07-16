@@ -70,7 +70,7 @@ class Comparer:
         comparisons["recall"] = metrics.calc_recall(gt, pred)
         comparisons["f1"] = metrics.calc_f1(comparisons["precision"], comparisons["recall"])
         comparisons["iou"] = metrics.calc_iou(gt, pred)
-        comparisons["hausdorff"] = metrics.calc_hausdorff(gt, pred)
+        # comparisons["hausdorff"] = metrics.calc_hausdorff(gt, pred)
         return comparisons
 
     # def _compare()
