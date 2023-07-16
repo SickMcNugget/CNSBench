@@ -1,16 +1,20 @@
 import argparse
 from pathlib import Path
-import cnsbench.metrics
+# import cnsbench.metrics
 from cnsbench.evaluation import Comparer
 
 def main(args: argparse.Namespace):
+    # args.compare_root = "final_preds/nostainnorm/MoNuSAC/unet/"
+    # args.dataset_root = "MoNuSAC/"
     evaluate_dataset(args)
 
 def evaluate_dataset(args: argparse.Namespace):
     comparer = Comparer(args.dataset_root)
-    df = comparer.compare("../NucleiSegmentation_mmseg/export")
-    # print(df.groupby("split").mean())
+    # df = comparer.compare("../NucleiSegmentation_mmseg/export")
+    df = comparer.compare(args.compare_root)
     print(df)
+    print(df.groupby("split").mean().loc[:, "f1":"iou"].round(3))
+
         # zip_paths = downloader_cls().download()
     
         # print(f"\nUnzipping {dataset}")
@@ -31,6 +35,7 @@ def evaluate_dataset(args: argparse.Namespace):
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--compare-root", default=Path("."), type=Path, help="The path where predictions lie")
     parser.add_argument("--dataset-root", default=Path("."), type=Path, help="The path to output the dataset")
     args = parser.parse_args()
     
