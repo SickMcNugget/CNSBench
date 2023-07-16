@@ -3,12 +3,10 @@ opencv-python
 pandas
 openslide-python
 tqdm
-# scikit-image
 imagesize
 zenodo_get
 gdown
 kaggle
 chardet
-openslide-python
 ultralytics
 wandb
