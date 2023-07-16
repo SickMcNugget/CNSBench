@@ -41,7 +41,7 @@ def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "TNBC", "CryoNuSeg"]
     parser = argparse.ArgumentParser()
     parser.add_argument("--datasets", action="append", choices=DATASETS, help="The datasets available for download and preparation")
-    parser.add_argument("--dataset-root", default=Path("."), type=Path, help="The path to output the dataset")
+    parser.add_argument("--dataset-root", default=Path("datasets"), type=Path, help="The path to output the dataset")
 
     args = parser.parse_args()
 
