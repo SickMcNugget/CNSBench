@@ -13,6 +13,8 @@ def main(args: argparse.Namespace):
         OUT_DIR.mkdir(parents=True)
 
     annotation_files: list[Path] = sorted(args.predictions.glob("*.txt"))
+    assert len(annotation_files) > 0, "No annotation files found"
+
     pooldata = [(args.dataset_root, annotation_file) for annotation_file in annotation_files]
     with Pool() as pool:
         pool.starmap(_yolo_to_mask, pooldata)
@@ -24,21 +26,24 @@ def _yolo_to_mask(dataset_path: Path, annotation_file: Path):
     with open(annotation_file) as f:
         dump = f.read()
 
-    associated_img = sorted(dataset_path.glob(f"**/yolo/**/{annotation_file.with_suffix('.png').name}"))
-    print(len(associated_img))
-
+    associated_img = sorted(dataset_path.glob(f"**/{annotation_file.with_suffix('.png').name}"))
+    assert len(associated_img) == 1, len(associated_img)
     shape = imagesize.get(associated_img[0])
 
     annotations = dump.splitlines()
-    nuclei = read_yolo_segmentations(annotations, shape)
+
+    try:
+        nuclei = read_yolo_segmentations(annotations, shape)
+    except ValueError:
+        print(f"Bad annotation in file: {annotation_file.name}")
     
-    mask = np.zeros(shape, dtype=np.uint8)
+    mask = np.zeros((shape[1], shape[0]), dtype=np.uint8)
     for nucleus in nuclei:
         # Polygon objects allow for greater flexibility when drawing the binary masks
         # mask_polygon = Polygon(blob)
         # coords = np.asarray(mask_polygon.exterior.coords)
         # coordinates needed to be swapped to line up with original image
-        rr, cc = polygon(nucleus[:,1], nucleus[:,0], shape)
+        rr, cc = polygon(nucleus[:,1], nucleus[:,0], (shape[1], shape[0]))
         mask[rr, cc] = 1
 
     cv2.imwrite(str(OUT_DIR / annotation_file.with_suffix(".png").name), mask)
@@ -48,6 +53,9 @@ def read_yolo_segmentations(annotations: list[str], shape: tuple[int, int]):
 
     nuclei = []
     for annotation in annotations:
+        if len(annotation) == 0:
+            continue
+
         split_annotation = annotation.split(" ")
         split_annotation = [float(value) for value in split_annotation]
         split_annotation = [(split_annotation[i], split_annotation[i+1]) for i in range(0, len(split_annotation), 2)]
