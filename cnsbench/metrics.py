@@ -57,6 +57,9 @@ def calc_recall(X: np.ndarray, y: np.ndarray, class_idx=1):
         return (np.logical_and(ground_truth, predicted).sum() / ground_truth.sum())
 
 def calc_f1(precision: float, recall: float):
+    if (precision + recall) == 0:
+        return 0.0
+
     return 2 * ((precision * recall) / (precision + recall))
 
 def calc_iou(X: np.ndarray, y: np.ndarray, class_idx=1):
