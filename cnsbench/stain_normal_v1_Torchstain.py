@@ -10,14 +10,20 @@ print('Python version: ' + sys.version)
 print('---------------------------------------------------------------------------')
 
 STANDARDIZE_BRIGHTNESS = True # Change this for no brightness standardisation
+METHOD = 'reinhard' # [ 'macenko', 'reinhard'] # default will be macenko
 DIR_TO_START = 'C:/Users/chakr/Documents/Honours/deeplabv3+_Stuff/PreProcessing/NEW/torchstain/CryoNuSeg/yolo/' #     start of path the directory to normalise (path must not include masks)
 DIR_TO_SAVE = 'C:/Users/chakr/Documents/Honours/deeplabv3+_Stuff/PreProcessing/NEW/torchstain/' #      where the new normalised dataset should go
-DIR_NAME_SAVE = 'CryoNuSeg_norm' #    to change the name of the normalised dataset
+DIR_NAME_SAVE = 'CryoNuSeg_norm_reinhard' #    to change the name of the normalised dataset
 DIR_FILE_TO_FIT = 'C:/Users/chakr/Documents/Honours/deeplabv3+_Stuff/PreProcessing/NEW/torchstain/CryoNuSeg/yolo/train/Human_AdrenalGland_01.png' #  full filename + path for file to fit to
 
 # --        Initial Fitting of file     -- #
 image_1 = cv2.cvtColor(cv2.imread(DIR_FILE_TO_FIT), cv2.COLOR_BGR2RGB)
-normalizer = torchstain.normalizers.MacenkoNormalizer(backend='numpy')
+if (METHOD == 'reinhard'):
+    normalizer = torchstain.normalizers.ReinhardNormalizer(backend='numpy')
+    print("[*] Chosen Reinhard stain normaliser")
+else: 
+    normalizer = torchstain.normalizers.MacenkoNormalizer(backend='numpy')
+    print("[*] Chosen Macenko stain normaliser")
 normalizer.fit(image_1)
 print('[*] Normalising and fiting the chosen image')
 # --   -- #
@@ -51,7 +57,10 @@ for root, subdirs, files in os.walk(DIR_TO_START, topdown=True):
             else:
                 # normalize the stain by using first image to fit
                 # then normalize it to the first image
-                image, H, E = normalizer.normalize(I=image, stains=True)
+                if (METHOD == 'macenko'):
+                    image, H, E = normalizer.normalize(I=image, stains=True)
+                else:
+                    image = normalizer.normalize(image)
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
                 # --------------NOW SAVE IMAGE TO NEW FOLDER-------#
                 cv2.imwrite(FILENAME, image)
