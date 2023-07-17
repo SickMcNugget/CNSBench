@@ -76,7 +76,7 @@ class ZenodoDownloader(Downloader):
         except FileNotFoundError:
             pass
         
-        return expected_zip_names[0]
+        return Path(expected_zip_names[0].name)
 
 class KaggleDownloader(Downloader):
     def __init__(self) -> None:
@@ -95,7 +95,7 @@ class KaggleDownloader(Downloader):
             raise DownloaderError("Please configure ~/.kaggle/kaggle.json. Follow the instructions" \
                 + " on their website.")
         
-        return expected_zip_names[0]
+        return Path(expected_zip_names[0].name)
 
 class Unzipper:
     def __init__(self) -> None:
@@ -220,15 +220,15 @@ class TNBCOrganiser(Organiser):
 
     def organise(self, unzip_paths: list[Path], destination_paths: list[Path], mask_paths: list[Path]):
         #[0] is train/val zip file
-        folders = sorted((unzip_paths[0] / unzip_paths[0].stem).glob(f"**/Slide_*"))
+        folders = sorted(unzip_paths[0].glob(f"**/Slide_*"))
         train_folders = folders[:6]
         val_folders = [folders[i] for i in [6, 9, 10]]
         test_folders = [folders[i] for i in [7, 8]]
 
         for train_folder in train_folders:
-            self.copy_if_new(train_folder, destination_paths[0])
+            self.copy_folder(train_folder, destination_paths[0])
         for val_folder in val_folders:
-            self.copy_if_new(val_folder, destination_paths[1])
+            self.copy_folder(val_folder, destination_paths[1])
         for test_folder in test_folders:
             self.copy_folder(test_folder, destination_paths[2])
 
@@ -238,9 +238,9 @@ class TNBCOrganiser(Organiser):
         test_mask_folders = [mask_folders[i] for i in [7, 8]]
 
         for train_mask_folder in train_mask_folders:
-            self.copy_if_new(train_mask_folder, mask_paths[0])
+            self.copy_folder(train_mask_folder, mask_paths[0])
         for val_mask_folder in val_mask_folders:
-            self.copy_if_new(val_mask_folder, mask_paths[1])
+            self.copy_folder(val_mask_folder, mask_paths[1])
         for test_mask_folder in test_mask_folders:
             self.copy_folder(test_mask_folder, mask_paths[2])
 
@@ -360,12 +360,12 @@ class CryoNuSegMaskGenerator(MaskGenerator):
             pooldata = self.get_pooldata(original_path, mask_path)
             
             with Pool() as pool:
-                for _ in tqdm(pool.istarmap(self.generate_mask, pooldata), total=len(pooldata)):
+                for _ in tqdm(pool.imap(self.generate_mask, pooldata), total=len(pooldata)):
                     pass
 
     def get_pooldata(self, original_path: Path, mask_path: Path):
             masks = list(mask_path.glob("*.png"))
-            return [(mask, mask_path) for mask in masks]
+            return [mask for mask in masks]
 
     def generate_mask(self, mask: Path):
         img = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
@@ -381,12 +381,12 @@ class TNBCMaskGenerator(MaskGenerator):
             pooldata = self.get_pooldata(original_path, mask_path)
             
             with Pool() as pool:
-                for _ in tqdm(pool.istarmap(self.generate_mask, pooldata), total=len(pooldata)):
+                for _ in tqdm(pool.imap(self.generate_mask, pooldata), total=len(pooldata)):
                     pass
 
     def get_pooldata(self, original_path: Path, mask_path: Path):
             masks = list(mask_path.glob("*.png"))
-            return [(mask, mask_path) for mask in masks]
+            return [mask for mask in masks]
 
     def generate_mask(self, mask: Path):
         img = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
@@ -625,8 +625,11 @@ class MoNuSACYolofier(Yolofier):
             return
 
         slide = OpenSlide(str(patient_image))
+        filename = str((yolofy_path / patient_image.stem).with_suffix(".png"))
+        slide.get_thumbnail(slide.level_dimensions[0]).save(filename)
         width, height = slide.level_dimensions[0]
         slide.close()
+
         nuclei = self.xml_parser.parse(patient_xml)
 
         normalised_nuclei = []
@@ -892,9 +895,8 @@ class Dataset(ABC):
         else:
             for zip_source in self.zip_sources:
                 downloaded_zip_path = downloader.download(zip_source)
-                final_zip_path = self.zip_folder / downloaded_zip_path.name
-                shutil.move(downloaded_zip_path, final_zip_path)
-                zip_paths.append(final_zip_path)
+                shutil.move(downloaded_zip_path, self.zip_folder)
+                zip_paths.append(self.zip_folder / downloaded_zip_path.name)
 
         return zip_paths
     
@@ -912,7 +914,7 @@ class Dataset(ABC):
             unzip_paths = [self.unzip_folder / zip_name.stem for zip_name in self.expected_zip_names]
         else:
             for zip_path in zip_paths:
-                unzip_path = unzipper.unzip(zip_path, self.unzip_folder)
+                unzip_path = unzipper.unzip(zip_path, (self.unzip_folder / zip_path.stem))
                 unzip_paths.append(unzip_path)
 
         return unzip_paths
@@ -927,7 +929,6 @@ class Dataset(ABC):
         if not self.requires_organise():
             print(f"{self.dataset_name} already organised, skipping...")
         else:
-            self.make_paths(self.original_paths)
             organiser.organise(unzip_paths, self.original_paths)
 
     def requires_organise(self):
@@ -940,7 +941,6 @@ class Dataset(ABC):
         if not self.requires_generate_masks():
             print(f"{self.dataset_name} already has generated masks, skipping...")
         else:
-            self.make_paths(self.mask_paths)
             mask_generator.generate_masks(self.original_paths, self.mask_paths)
 
     def requires_generate_masks(self):
@@ -953,7 +953,6 @@ class Dataset(ABC):
         if not self.requires_yolofy():
             print(f"{self.dataset_name} already has yolo-trainable data, skipping...")
         else:
-            self.make_paths(self.yolofy_paths)
             yolofier.yolofy_files(self.original_paths, self.yolofy_paths)
 
     def requires_yolofy(self):
@@ -989,12 +988,24 @@ class CryoNuSegDataset(Dataset):
     def __init__(self, dataset_root: Path, **kwargs) -> None:
         super().__init__(dataset_root, **kwargs)
 
+    def download(self, downloader: Downloader) -> list[Path]:
+        zip_paths = []
+        
+        if not self.requires_download():
+            print(f"{self.dataset_name} already downloaded, skipping...")
+            zip_paths = [self.zip_folder / zip_name.name for zip_name in self.expected_zip_names]
+        else:
+            for zip_source in self.zip_sources:
+                downloaded_zip_path = downloader.download(zip_source, self.expected_zip_names)
+                shutil.move(downloaded_zip_path, self.zip_folder)
+                zip_paths.append(self.zip_folder / downloaded_zip_path.name)
+
+        return zip_paths
+
     def organise(self, organiser: Organiser, unzip_paths: list[Path]):
         if not self.requires_organise():
             print(f"{self.dataset_name} already organised, skipping...")
         else:
-            self.make_paths(self.original_paths)
-            self.make_paths(self.mask_paths)
             organiser.organise(unzip_paths, self.original_paths, self.mask_paths)
 
     def requires_generate_masks(self):
@@ -1015,9 +1026,7 @@ class CryoNuSegDataset(Dataset):
         if not self.requires_yolofy():
             print(f"{self.dataset_name} already has yolo-trainable data, skipping...")
         else:
-            self.make_paths(self.yolofy_paths)
             yolofier.yolofy_files(self.original_paths, self.yolofy_paths, self.mask_paths)
-
 
 class TNBCDataset(Dataset):
     ZIP_SOURCES = ["10.5281/zenodo.1175282"]
@@ -1026,12 +1035,24 @@ class TNBCDataset(Dataset):
     def __init__(self, dataset_root: Path, **kwargs) -> None:
         super().__init__(dataset_root, **kwargs)
 
+    def download(self, downloader: Downloader) -> list[Path]:
+        zip_paths = []
+        
+        if not self.requires_download():
+            print(f"{self.dataset_name} already downloaded, skipping...")
+            zip_paths = [self.zip_folder / zip_name.name for zip_name in self.expected_zip_names]
+        else:
+            for zip_source in self.zip_sources:
+                downloaded_zip_path = downloader.download(zip_source, self.expected_zip_names)
+                shutil.move(downloaded_zip_path, self.zip_folder)
+                zip_paths.append(self.zip_folder / downloaded_zip_path.name)
+
+        return zip_paths
+
     def organise(self, organiser: Organiser, unzip_paths: list[Path]):
         if not self.requires_organise():
             print(f"{self.dataset_name} already organised, skipping...")
         else:
-            self.make_paths(self.original_paths)
-            self.make_paths(self.mask_paths)
             organiser.organise(unzip_paths, self.original_paths, self.mask_paths)
 
     def requires_generate_masks(self):
@@ -1052,7 +1073,6 @@ class TNBCDataset(Dataset):
         if not self.requires_yolofy():
             print(f"{self.dataset_name} already has yolo-trainable data, skipping...")
         else:
-            self.make_paths(self.yolofy_paths)
             yolofier.yolofy_files(self.original_paths, self.yolofy_paths, self.mask_paths)
 
 
@@ -1060,9 +1080,6 @@ class DatasetManager:
     def __init__(self, dataset_root: Path | str) -> None:
         if isinstance(dataset_root, str):
             dataset_root = Path(dataset_root)
-        if not dataset_root.exists():
-            dataset_root.mkdir(parents=True)
-
         self.dataset_root = dataset_root
 
     @property
@@ -1073,6 +1090,15 @@ class DatasetManager:
     def unzip_folder(self):
         return self.dataset_root / "unzips"
 
+    def create_directories(self, dataset: Dataset):
+        if not self.zip_folder.exists():
+            self.zip_folder.mkdir()
+        if not self.unzip_folder.exists():
+            self.unzip_folder.mkdir()
+
+        dataset.make_paths(dataset.original_paths)
+        dataset.make_paths(dataset.mask_paths)
+        dataset.make_paths(dataset.yolofy_paths)
 
     def prepare(self, dataset_name: str):
         if dataset_name.lower() == "monuseg":
@@ -1105,20 +1131,21 @@ class DatasetManager:
         unzipper = Unzipper()
 
         try:
-            print(f"-- {dataset} --")
-            print(f"Attempting to download {dataset}")
+            self.create_directories(dataset)
+
+            print(f"Attempting to download {dataset.dataset_name}")
             zip_paths = dataset.download(downloader)
 
-            print(f"\nUnzipping {dataset}")
+            print(f"\nUnzipping {dataset.dataset_name}")
             unzip_paths = dataset.unzip(unzipper, zip_paths)
 
-            print(f"\nOrganising {dataset}")
+            print(f"\nOrganising {dataset.dataset_name}")
             dataset.organise(organiser, unzip_paths)
 
-            print(f"\nGenerate masks for {dataset}")
+            print(f"\nGenerate masks for {dataset.dataset_name}")
             dataset.generate_masks(mask_generator)
 
-            print(f"\nCreating YOLO compatible training data for {dataset}\n")
+            print(f"\nCreating YOLO compatible training data for {dataset.dataset_name}\n")
             dataset.yolofy(yolofier)
         except DownloaderError as e:
             print(e)
