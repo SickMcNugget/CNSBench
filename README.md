@@ -21,10 +21,7 @@ conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvi
 pip install -U openmim
 mim install mmengine
 mim install "mmcv>=2.0.0"
-git clone -b main https://github.com/open-mmlab/mmsegmentation.git
-cd mmsegmentation
-pip install -v -e .
-cd ..
+pip install "mmsegmentation>=1.0.0"
 ```
 
 5. Install left-over dependencies (OpenSlide, ultralytics, scikit-image)
