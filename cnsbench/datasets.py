@@ -15,6 +15,8 @@ from skimage.draw import polygon
 import numpy as np
 import cv2
 from openslide import OpenSlide
+import torchstain
+from torchvision import transforms
 
 # Progress
 from tqdm import tqdm
@@ -761,6 +763,34 @@ class TNBCYolofier(Yolofier):
             annotations += f" {nucleus[0, 0, 0]} {nucleus[0, 0, 1]}\n"
         return annotations
 
+class StainNormaliser:
+    def __init__(self) -> None:
+        super().__init__()
+        self.normaliser = torchstain.normalizers.MacenkoNormalizer(backend="torch")
+
+    def normalise(self, fit_image: Path, yolofy_paths: list[Path], yolosn_paths: list[Path]):
+        fit_im = cv2.cvtColor(cv2.imread(str(fit_image)), cv2.COLOR_BGR2RGB)
+
+        T = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x*255)
+        ])
+
+        self.normaliser.fit(T(fit_im))
+
+        for yolofy_path, yolosn_path in zip(yolofy_paths, yolosn_paths):
+            pngs = sorted(yolofy_path.glob("*.png"))
+            txts = sorted(yolofy_path.glob("*.txt"))
+            for png, txt in tqdm(zip(pngs, txts), total=len(pngs)):
+                if png.name != fit_image.name:
+                    to_normalise = cv2.cvtColor(cv2.imread(str(png)), cv2.COLOR_BGR2RGB)
+                    norm, _, _ = self.normaliser.normalize(I=T(to_normalise), stains=False)
+                    norm = norm.numpy().astype(np.uint8)
+                    norm = cv2.cvtColor(norm, cv2.COLOR_RGB2BGR)
+                    cv2.imwrite(str(yolosn_path / png.name), norm)
+                else:
+                    shutil.copy(png, yolosn_path)
+                shutil.copy(txt, yolosn_path)
 
 # class MoNuSACYolofier(Yolofier):
 #     def __init__(self, dataset_root: str | Path):
@@ -886,6 +916,13 @@ class Dataset(ABC):
                           self.dataset_root / self.dataset_name / "yolo" / "test"]
         return yolofy_paths
 
+    @property
+    def yolosn_paths(self) -> list[Path]:
+        yolosn_paths = [self.dataset_root / self.dataset_name / "yolo_sn" / "train",
+                          self.dataset_root / self.dataset_name / "yolo_sn" / "val",
+                          self.dataset_root / self.dataset_name / "yolo_sn" / "test"]
+        return yolosn_paths
+
     def download(self, downloader: Downloader) -> list[Path]:
         zip_paths = []
         
@@ -961,6 +998,18 @@ class Dataset(ABC):
                 return True
         return False
 
+    def normalise(self, stain_normaliser: StainNormaliser, fit_image: Path):
+        if not self.requires_stainnorm():
+            print(f"{self.dataset_name} already has stain_normalised data, skipping...")
+        else:
+            stain_normaliser.normalise(fit_image, self.yolofy_paths, self.yolosn_paths)
+
+    def requires_stainnorm(self):
+        for path in self.yolosn_paths:
+            if not path.exists() or not any(path.iterdir()):
+                return True
+            return False
+
     def make_paths(self, paths: list[Path]):
         for path in paths:
             if not path.exists():
@@ -972,7 +1021,11 @@ class MoNuSegDataset(Dataset):
 
     def __init__(self, dataset_root: Path, **kwargs) -> None:
         super().__init__(dataset_root, **kwargs)
-        
+    
+    def normalise(self, stain_normaliser: StainNormaliser):
+        # Manually chosen
+        fit_image = self.yolofy_paths[0] / "TCGA-A7-A13E-01Z-00-DX1.png"
+        super().normalise(stain_normaliser, fit_image)
 
 class MoNuSACDataset(Dataset):
     ZIP_SOURCES = ["1lxMZaAPSpEHLSxGA9KKMt_r-4S8dwLhq", "1G54vsOdxWY1hG7dzmkeK3r0xz9s-heyQ"]
@@ -980,6 +1033,11 @@ class MoNuSACDataset(Dataset):
 
     def __init__(self, dataset_root: Path, **kwargs) -> None:
         super().__init__(dataset_root, **kwargs)
+
+    def normalise(self, stain_normaliser: StainNormaliser):
+        # Manually chosen
+        fit_image = self.yolofy_paths[0] / "TCGA-A2-A0ES-01Z-00-DX1_2.png"
+        super().normalise(stain_normaliser, fit_image)
 
 class CryoNuSegDataset(Dataset):
     ZIP_SOURCES = ["ipateam/segmentation-of-nuclei-in-cryosectioned-he-images"]
@@ -1028,6 +1086,11 @@ class CryoNuSegDataset(Dataset):
         else:
             yolofier.yolofy_files(self.original_paths, self.yolofy_paths, self.mask_paths)
 
+    def normalise(self, stain_normaliser: StainNormaliser):
+        # Manually chosen
+        fit_image = self.yolofy_paths[0] / "Human_Larynx_02.png"
+        super().normalise(stain_normaliser, fit_image)
+
 class TNBCDataset(Dataset):
     ZIP_SOURCES = ["10.5281/zenodo.1175282"]
     ZIP_NAMES = ["TNBC_NucleiSegmentation.zip"]
@@ -1075,6 +1138,10 @@ class TNBCDataset(Dataset):
         else:
             yolofier.yolofy_files(self.original_paths, self.yolofy_paths, self.mask_paths)
 
+    def normalise(self, stain_normaliser: StainNormaliser):
+        # Manually chosen
+        fit_image = self.yolofy_paths[0] / "03_1.png"
+        super().normalise(stain_normaliser, fit_image)
 
 class DatasetManager:
     def __init__(self, dataset_root: Path | str) -> None:
@@ -1099,6 +1166,7 @@ class DatasetManager:
         dataset.make_paths(dataset.original_paths)
         dataset.make_paths(dataset.mask_paths)
         dataset.make_paths(dataset.yolofy_paths)
+        dataset.make_paths(dataset.yolosn_paths)
 
     def prepare(self, dataset_name: str):
         if dataset_name.lower() == "monuseg":
@@ -1129,6 +1197,7 @@ class DatasetManager:
             yolofier = TNBCYolofier()
 
         unzipper = Unzipper()
+        stain_normaliser = StainNormaliser()
 
         try:
             self.create_directories(dataset)
@@ -1136,16 +1205,19 @@ class DatasetManager:
             print(f"Attempting to download {dataset.dataset_name}")
             zip_paths = dataset.download(downloader)
 
-            print(f"\nUnzipping {dataset.dataset_name}")
+            print(f"Unzipping {dataset.dataset_name}")
             unzip_paths = dataset.unzip(unzipper, zip_paths)
 
-            print(f"\nOrganising {dataset.dataset_name}")
+            print(f"Organising {dataset.dataset_name}")
             dataset.organise(organiser, unzip_paths)
 
-            print(f"\nGenerate masks for {dataset.dataset_name}")
+            print(f"Generate masks for {dataset.dataset_name}")
             dataset.generate_masks(mask_generator)
 
-            print(f"\nCreating YOLO compatible training data for {dataset.dataset_name}\n")
+            print(f"Creating YOLO compatible training data for {dataset.dataset_name}")
             dataset.yolofy(yolofier)
+
+            print(f"Creating stain normalised variation of YOLO images for {dataset.dataset_name}")
+            dataset.normalise(stain_normaliser)
         except DownloaderError as e:
             print(e)
