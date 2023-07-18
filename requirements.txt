@@ -10,3 +10,4 @@ kaggle
 chardet
 ultralytics
 wandb
+torchstain[torch]
