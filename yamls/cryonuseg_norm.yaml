@@ -1,0 +1,7 @@
+path: CryoNuSeg_norm/yolo
+train: train
+val: val
+test: test
+
+names:
+  0: nucleus

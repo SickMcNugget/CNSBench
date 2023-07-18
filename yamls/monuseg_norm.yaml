@@ -1,0 +1,7 @@
+path: MoNuSeg_norm/yolo/segment
+train: train
+val: val
+test: test
+
+names:
+  0: nucleus

@@ -1,0 +1,7 @@
+path: MoNuSAC_norm/yolo_1cls_SNV/
+train: train
+val: val
+test: test
+
+names:
+  0: nucleus
