@@ -764,9 +764,12 @@ class TNBCYolofier(Yolofier):
         return annotations
 
 class StainNormaliser:
-    def __init__(self) -> None:
+    def __init__(self, choice: str) -> None:
         super().__init__()
-        self.normaliser = torchstain.normalizers.MacenkoNormalizer(backend="torch")
+        if choice == "macenko":
+            self.normaliser = torchstain.normalizers.MacenkoNormalizer(backend="torch")
+        elif choice == "reinhard":
+            self.normaliser = torchstain.normalizers.ReinhardNormalizer(backend="torch", method="modified")
 
     def normalise(self, fit_image: Path, yolofy_paths: list[Path], yolosn_paths: list[Path]):
         fit_im = cv2.cvtColor(cv2.imread(str(fit_image)), cv2.COLOR_BGR2RGB)
@@ -784,7 +787,11 @@ class StainNormaliser:
             for png, txt in tqdm(zip(pngs, txts), total=len(pngs)):
                 if png.name != fit_image.name:
                     to_normalise = cv2.cvtColor(cv2.imread(str(png)), cv2.COLOR_BGR2RGB)
-                    norm, _, _ = self.normaliser.normalize(I=T(to_normalise), stains=False)
+                    if "Reinhard" in self.normaliser.__class__.__name__:
+                        norm = self.normaliser.normalize(I=T(to_normalise))
+                    else:
+                        norm, _, _ = self.normaliser.normalize(I=T(to_normalise), stains=False)
+                    
                     norm = norm.numpy().astype(np.uint8)
                     norm = cv2.cvtColor(norm, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(str(yolosn_path / png.name), norm)
@@ -1197,7 +1204,7 @@ class DatasetManager:
             yolofier = TNBCYolofier()
 
         unzipper = Unzipper()
-        stain_normaliser = StainNormaliser()
+        stain_normaliser = StainNormaliser("reinhard")
 
         try:
             self.create_directories(dataset)
