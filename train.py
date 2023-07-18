@@ -16,9 +16,9 @@ def get_config(dataset: str, normalised: bool, model: str):
             match model.lower():
                 case 'deeplabv3plus':
                     if normalised:
-                        config = "1"
+                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_monuseg_norm-512x512.py"
                     else:
-                        config = "deeplabv3plus_r50-d8_1xb1-20k_monuseg-512x512.py"
+                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_monuseg-512x512.py"
                 case 'unet':
                     if normalised:
                         config = "3"
@@ -30,9 +30,9 @@ def get_config(dataset: str, normalised: bool, model: str):
             match model.lower():
                 case 'deeplabv3plus':
                     if normalised:
-                        config = "5"
+                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_monusac_norm-512x512.py"
                     else:
-                        config = "deeplabv3plus_r50-d8_1xb1-20k_monusac-512x512.py"
+                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_monusac-512x512.py"
                 case 'unet':
                     if normalised:
                         config = "7"
@@ -44,9 +44,9 @@ def get_config(dataset: str, normalised: bool, model: str):
             match model.lower():
                 case 'deeplabv3plus':
                     if normalised:
-                        config = "9"
+                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_cryonuseg_norm-512x512.py"
                     else:
-                        config = "deeplabv3plus_r50-d8_1xb1-20k_cryonuseg-512x512.py"
+                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_cryonuseg-512x512.py"
                 case 'unet':
                     if normalised:
                         config = "11"
@@ -58,9 +58,9 @@ def get_config(dataset: str, normalised: bool, model: str):
             match model.lower():
                 case 'deeplabv3plus':
                     if normalised:
-                        config = "13"
+                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_tnbc_norm-512x512.py"
                     else:
-                        config = "deeplabv3plus_r50-d8_1xb1-20k_tnbc-512x512.py"
+                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_tnbc-512x512.py"
                 case 'unet':
                     if normalised:
                         config = "15"
