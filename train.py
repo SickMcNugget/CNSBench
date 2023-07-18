@@ -11,58 +11,58 @@ from mmengine.runner import Runner
 
 def get_config(dataset: str, normalised: bool, model: str):
     config = ""
-    match(dataset.lower()):
+    match dataset.lower():
         case 'monuseg':
-            match(model.lower()):
+            match model.lower():
                 case 'deeplabv3plus':
-                    if(normalised):
+                    if normalised:
                         config = "1"
                     else:
                         config = "deeplabv3plus_r50-d8_1xb1-20k_monuseg-512x512.py"
                 case 'unet':
-                    if(normalised):
+                    if normalised:
                         config = "3"
                     else:
                         config = "4"
                 case default:
                     return "Model chosen does not exist"
         case 'monusac':
-            match(model.lower()):
+            match model.lower():
                 case 'deeplabv3plus':
-                    if(normalised):
+                    if normalised:
                         config = "5"
                     else:
                         config = "deeplabv3plus_r50-d8_1xb1-20k_monusac-512x512.py"
                 case 'unet':
-                    if(normalised):
+                    if normalised:
                         config = "7"
                     else:
                         config = "8"
                 case default:
                     return "Model chosen does not exist"
         case 'cryonuseg':
-            match(model.lower()):
+            match model.lower():
                 case 'deeplabv3plus':
-                    if(normalised):
+                    if normalised:
                         config = "9"
                     else:
                         config = "deeplabv3plus_r50-d8_1xb1-20k_cryonuseg-512x512.py"
                 case 'unet':
-                    if(normalised):
+                    if normalised:
                         config = "11"
                     else:
                         config = "12"
                 case default:
                     return "Model chosen does not exist"
         case 'tnbc':
-            match(model.lower()):
+            match model.lower():
                 case 'deeplabv3plus':
-                    if(normalised):
+                    if normalised:
                         config = "13"
                     else:
                         config = "deeplabv3plus_r50-d8_1xb1-20k_tnbc-512x512.py"
                 case 'unet':
-                    if(normalised):
+                    if normalised:
                         config = "15"
                     else:
                         config = "16"
@@ -78,8 +78,7 @@ def register_datasets():
         """MoNuSeg dataset."""
         METAINFO = dict(
             classes = ('background', 'nucleus'),
-            #palette = [[120,120,120], [180, 120, 120]]
-            palette = [[120,120,120], [255, 255, 255]] # This has been changed, lets see what it does
+            palette = [[0, 0, 0], [0, 255, 0]] # This has been changed, lets see what it does
         )
     
         def __init__(self,
@@ -98,8 +97,7 @@ def register_datasets():
         """MoNuSAC dataset."""
         METAINFO = dict(
             classes = ('background', 'nucleus'),
-            #palette = [[120,120,120], [180, 120, 120]]
-            palette = [[120,120,120], [255, 255, 255]] # This has been changed, lets see what it does
+            palette = [[0, 0, 0], [0, 255, 0]] # This has been changed, lets see what it does
         )
     
         def __init__(self,
@@ -118,8 +116,7 @@ def register_datasets():
         """CryoNuSeg dataset."""
         METAINFO = dict(
             classes = ('background', 'nucleus'),
-            #palette = [[120,120,120], [180, 120, 120]]
-            palette = [[120,120,120], [255, 255, 255]] # This has been changed, lets see what it does
+            palette = [[0, 0, 0], [0, 255, 0]] # This has been changed, lets see what it does
         )
     
         def __init__(self,
@@ -138,8 +135,7 @@ def register_datasets():
         """TNBC dataset."""
         METAINFO = dict(
             classes = ('background', 'nucleus'),
-            #palette = [[120,120,120], [180, 120, 120]]
-            palette = [[120,120,120], [255, 255, 255]] # This has been changed, lets see what it does
+            palette = [[0, 0, 0], [0, 255, 0]] # This has been changed, lets see what it does
         )
     
         def __init__(self,
@@ -154,8 +150,9 @@ def register_datasets():
                 **kwargs)
 
 def main(args: argparse.Namespace):
-    #print(args.integers)
-    register_datasets() # make sure the datasets are registered
+    
+    # make sure the datasets are registered
+    register_datasets() 
     # -- grab the config location based on arguments -- #
     config_location = get_config(args.dataset, args.normalised, args.model)
     cfg = Config.fromfile(config_location)
@@ -166,26 +163,38 @@ def main(args: argparse.Namespace):
 
     # -- Create the work directory -- #
     now = datetime.datetime.now()
-    work_dir = "work_dirs/" + args.dataset + "/" + args.model + "/" + now.year + "/" + now.month + "/" + now.day + "/" + now.hour + "/" + now.minute + "/"
+    work_dir = f"./work_dirs/{args.dataset}/{args.model}/{now.year}/{now.month}/{now.day}/{now.hour}/{now.minute}/"
     cfg.work_dir = work_dir
 
-    # -- Setup other model config info -- #
-    cfg.train_cfg.max_iters = args.iteration
-    cfg.train_cfg.val_interval = args.val
-    cfg.default_hooks.logger.interval = args.log_interval
-    cfg.default_hooks.checkpoint.interval = args.checkpoint
+    # -- Hooks -- #
+    logger = dict(type="LoggerHook", interval=args.log_interval, log_metric_by_epoch=False)
+    checkpoint = dict(type="CheckpointHook",
+                      interval=args.checkpoint_interval,
+                      by_epoch=False,
+                      max_keep_ckpts=5,
+                      save_last=True,
+                      save_best="mIoU",
+                      rule="greater",
+                      published_keys=["meta", "state_dict"])
 
-    # -- WANDB STUFF [need to change] -- #
-    if (args.wandb):
-        project="CryoNuSeg"                                                     #change this
-        name="deeplabv3+_iter_20000"  
+    cfg.default_hooks.logger = logger
+    cfg.default_hooks.checkpoint = checkpoint
+
+    if args.wandb:
         cfg.vis_backends = [dict(
             type='WandbVisBackend',
-            init_kwargs = dict(project=project, name=name))]                #change this
+            init_kwargs = dict(project=args.dataset, name=config_location))]
     
-    # -- Visualiser -- #
-    cfg.visualizer = dict(
-        type='SegLocalVisualizer', vis_backends=cfg.vis_backends, name='visualizer')
+        cfg.visualizer = dict(
+            type='SegLocalVisualizer', vis_backends=cfg.vis_backends, name='visualizer')
+
+
+    # -- Setup other model config info -- #
+    cfg.train_cfg = dict(
+        type="IterBasedTrainLoop",
+        max_iters=args.iterations,
+        val_interval=args.val_interval
+    )
     
     # -- Set seed to facilitate reproducing the result -- #
     cfg['randomness'] = dict(seed=0)
@@ -206,18 +215,21 @@ def get_mmseg_root():
     return root
 
 def get_args() -> argparse.Namespace:
+    DATASETS = ["MoNuSeg", "MoNuSAC", "TNBC", "CryoNuSeg"]
+    MODELS = ["deeplabv3plus", "unet"]
+
     parser = argparse.ArgumentParser("Training script for training models on the mmsegmentation architecture")
     parser.add_argument("-c", "--config", type=Path, required=True, help="The configuration file to use for training")
     #parser.add_argument("--project", type=str, required=True, help="The name to use for saving project data")
     parser.add_argument("--batch", type=int, default=2, help="The batch size to use during training")
     parser.add_argument("--wandb", action="store_true", help="Enables Weights and Biases for logging results")
-    parser.add_argument("--dataset", type=str, required=True, help="The name of the dataset to use for training [ 'MoNuSeg' , 'CryoNuSeg', 'MoNuSAC', 'TNBC']")
-    parser.add_argument("--model", type=str, required=True, help="The name of the model to use for training ['deeplabv3plus','unet']")
-    parser.add_argument("--normalised", action='store_true', help="Flag for training on normalised version of dataset")
-    parser.add_argument("--iteration ", type=int, default=20000, help="Max iterations the model should train upto")
-    parser.add_argument("--val", type=int, default=1000, help="validation interval for model training")
-    parser.add_argument("--log_interval", type=int, default=10, help="Iteration inverval for tracking current model progress")
-    parser.add_argument("--checkpoint", type=int, default=5000, help="Model will save every <checkpoint> iterations")
+    parser.add_argument("--dataset", type=str, required=True, choices=DATASETS, help="The dataset to use for training")
+    parser.add_argument("--model", type=str, required=True, choices=MODELS, help="The model to use for training")
+    parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
+    parser.add_argument("--iterations", type=int, default=20000, help="The maximum iterations for training")
+    parser.add_argument("--val-interval", type=int, default=1000, help="Validation interval during training in iterations")
+    parser.add_argument("--log-interval", type=int, default=25, help="Logging interval during training in iterations")
+    parser.add_argument("--checkpoint-interval", type=int, default=2000, help="Checkpointing interval in iterations")
     args = parser.parse_args()
     return args
 
