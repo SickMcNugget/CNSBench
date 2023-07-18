@@ -1,80 +1,14 @@
 import argparse
-from pathlib import Path
 import datetime
-import importlib
-import mmcv
-import mmseg
 from mmseg.registry import DATASETS
 from mmseg.datasets import BaseSegDataset
 from mmengine import Config
 from mmengine.runner import Runner
-
-def get_config(dataset: str, normalised: bool, model: str):
-    config = ""
-    match dataset.lower():
-        case 'monuseg':
-            match model.lower():
-                case 'deeplabv3plus':
-                    if normalised:
-                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_monuseg_norm-512x512.py"
-                    else:
-                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_monuseg-512x512.py"
-                case 'unet':
-                    if normalised:
-                        config = "config/unet_s5-d16_fcn_1xb1-20k_monuseg_norm-512x512.py"
-                    else:
-                        config = "config/unet_s5-d16_fcn_1xb1-20k_monuseg-512x512.py"
-                case default:
-                    return "Model chosen does not exist"
-        case 'monusac':
-            match model.lower():
-                case 'deeplabv3plus':
-                    if normalised:
-                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_monusac_norm-512x512.py"
-                    else:
-                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_monusac-512x512.py"
-                case 'unet':
-                    if normalised:
-                        config = "config/unet_s5-d16_fcn_1xb1-20k_monusac_norm-512x512.py"
-                    else:
-                        config = "config/unet_s5-d16_fcn_1xb1-20k_monusac-512x512.py"
-                case default:
-                    return "Model chosen does not exist"
-        case 'cryonuseg':
-            match model.lower():
-                case 'deeplabv3plus':
-                    if normalised:
-                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_cryonuseg_norm-512x512.py"
-                    else:
-                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_cryonuseg-512x512.py"
-                case 'unet':
-                    if normalised:
-                        config = "config/unet_s5-d16_fcn_1xb2-20k_cryonuseg_norm-512x512.py"
-                    else:
-                        config = "config/unet_s5-d16_fcn_1xb2-20k_cryonuseg-512x512.py"
-                case default:
-                    return "Model chosen does not exist"
-        case 'tnbc':
-            match model.lower():
-                case 'deeplabv3plus':
-                    if normalised:
-                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_tnbc_norm-512x512.py"
-                    else:
-                        config = "config/deeplabv3plus_r50-d8_1xb1-20k_tnbc-512x512.py"
-                case 'unet':
-                    if normalised:
-                        config = "config/unet_s5-d16_fcn_1xb2-20k_tnbc_norm-512x512.py"
-                    else:
-                        config = "config/unet_s5-d16_fcn_1xb2-20k_tnbc-512x512.py"
-                case default:
-                    return "Model chosen does not exist"
-        case default:
-            return "Dataset chosen does not exist"
-    return config
+from pathlib import Path
 
 def register_datasets():
     @DATASETS.register_module()
-    class MonusegDataset(BaseSegDataset):
+    class MoNuSegDataset(BaseSegDataset):
         """MoNuSeg dataset."""
         METAINFO = dict(
             classes = ('background', 'nucleus'),
@@ -93,7 +27,7 @@ def register_datasets():
                 **kwargs)
     
     @DATASETS.register_module()
-    class MonusacDataset(BaseSegDataset):
+    class MoNuSACDataset(BaseSegDataset):
         """MoNuSAC dataset."""
         METAINFO = dict(
             classes = ('background', 'nucleus'),
@@ -112,7 +46,7 @@ def register_datasets():
                 **kwargs)
         
     @DATASETS.register_module()
-    class CryonusegDataset(BaseSegDataset):
+    class CryoNuSegDataset(BaseSegDataset):
         """CryoNuSeg dataset."""
         METAINFO = dict(
             classes = ('background', 'nucleus'),
@@ -131,7 +65,7 @@ def register_datasets():
                 **kwargs)
     
     @DATASETS.register_module()
-    class TnbcDataset(BaseSegDataset):
+    class TNBCDataset(BaseSegDataset):
         """TNBC dataset."""
         METAINFO = dict(
             classes = ('background', 'nucleus'),
@@ -149,21 +83,54 @@ def register_datasets():
                 reduce_zero_label=reduce_zero_label,
                 **kwargs)
 
+def get_filename(args: argparse.Namespace):
+    if args.model == "unet":
+        model = "unet_s5-d16"
+    elif args.model == "deeplabv3plus":
+        model = "deeplabv3plus_r50_d8"
+
+    return f"{model}_1xb{args.batch}-{args.iterations//1000}k_{args.dataset.lower()}-512x512.py"
+
 def main(args: argparse.Namespace):
-    
     # make sure the datasets are registered
     register_datasets() 
+
+    args.dataset = "MoNuSeg"
+    args.model = "unet"
     # -- grab the config location based on arguments -- #
-    config_location = get_config(args.dataset, args.normalised, args.model)
-    cfg = Config.fromfile(config_location)
-    print('[*] Config loaded: ' + config_location)
+    default_cfg = Config.fromfile("configs/default.py")
+    dataset_cfg = Config.fromfile("configs/default_dataset.py")
+    default_model_cfg = Config.fromfile("configs/default_model.py")
+    model_cfg = Config.fromfile(f"configs/{args.model.lower()}.py")
+    if args.normalised:
+        normalised_cfg = Config.fromfile(f"configs/normalised_dataset.py")
+
+    cfg = Config()
+    cfg.merge_from_dict(default_cfg.to_dict())
+    cfg.merge_from_dict(dataset_cfg.to_dict())
+    cfg.merge_from_dict(default_model_cfg.to_dict())
+    cfg.merge_from_dict(model_cfg.to_dict())
+    if args.normalised:
+        cfg.merge_from_dict(normalised_cfg.to_dict())
     
+    # -- Fill in dataset settings -- #
+    cfg.dataset_type = f"{args.dataset}Dataset"
+    cfg.data_root = str(args.dataset_root / args.dataset)
+    cfg.train_dataloader.dataset.type = cfg.dataset_type
+    cfg.train_dataloader.dataset.data_root = cfg.data_root
+
+    cfg.val_dataloader.dataset.type = cfg.dataset_type
+    cfg.val_dataloader.dataset.data_root = cfg.data_root
+
+    cfg.test_dataloader.dataset.type = cfg.dataset_type
+    cfg.test_dataloader.dataset.data_root = cfg.data_root
+
     # -- set batch size for model -- #
     cfg.train_dataloader.batch_size = args.batch
 
     # -- Create the work directory -- #
     now = datetime.datetime.now()
-    work_dir = f"./work_dirs/{args.dataset}/{args.model}/{now.year}/{now.month}/{now.day}/{now.hour}/{now.minute}/"
+    work_dir = f"./work_dirs/{args.dataset}/{args.model}/{now.year}-{now.month:02d}-{now.day:02d}_{now.hour:02d}_{now.minute:02d}_{now.second:02d}/"
     cfg.work_dir = work_dir
 
     # -- Hooks -- #
@@ -183,7 +150,7 @@ def main(args: argparse.Namespace):
     if args.wandb:
         cfg.vis_backends = [dict(
             type='WandbVisBackend',
-            init_kwargs = dict(project=args.dataset, name=config_location))]
+            init_kwargs = dict(project=args.dataset, name=get_filename(args)))]
     
         cfg.visualizer = dict(
             type='SegLocalVisualizer', vis_backends=cfg.vis_backends, name='visualizer')
@@ -202,17 +169,14 @@ def main(args: argparse.Namespace):
     # -- Let's have a look at the final config used for training -- #
     print(f'Config:\n{cfg.pretty_text}')
 
+    # -- Workaround to set a custom config name -- #
+    cfg.dump(get_filename(args))
+    cfg = Config.fromfile(get_filename(args))
+    Path(get_filename(args)).unlink()
+
     # -- Train a model -- #
     runner = Runner.from_cfg(cfg)
     runner.train()
-
-def get_mmseg_root():
-    mmseg = importlib.util.find_spec("mmseg")
-    root = Path(mmseg.submodule_search_locations[0])
-    while "mmsegmentation" not in root.stem and not root.stem == "":
-        root = root.parent
-
-    return root
 
 def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "TNBC", "CryoNuSeg"]
@@ -222,8 +186,9 @@ def get_args() -> argparse.Namespace:
     #parser.add_argument("--project", type=str, required=True, help="The name to use for saving project data")
     parser.add_argument("--batch", type=int, default=2, help="The batch size to use during training")
     parser.add_argument("--wandb", action="store_true", help="Enables Weights and Biases for logging results")
-    parser.add_argument("--dataset", type=str, required=True, choices=DATASETS, help="The dataset to use for training")
-    parser.add_argument("--model", type=str, required=True, choices=MODELS, help="The model to use for training")
+    parser.add_argument("--dataset", type=str, required=False, choices=DATASETS, help="The dataset to use for training")
+    parser.add_argument("--model", type=str, required=False, choices=MODELS, help="The model to use for training")
+    parser.add_argument("--dataset-root", type=Path, default=Path("datasets"), help="The base directory for datasets")
     parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
     parser.add_argument("--iterations", type=int, default=20000, help="The maximum iterations for training")
     parser.add_argument("--val-interval", type=int, default=1000, help="Validation interval during training in iterations")
@@ -236,4 +201,3 @@ if __name__=="__main__":
     args = get_args()
     # Ensure old profiling data is cleaned up
     main(args)
-

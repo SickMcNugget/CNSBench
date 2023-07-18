@@ -1,7 +1,3 @@
-_base_ = [
-    'deeplabv3plus_r50-d8.py', 'cryonuseg.py',
-    'default_runtime.py', 'schedule_20k.py'
-]
 crop_size = (512, 512)
 norm_cfg = dict(type='BN', requires_grad=True)
 data_preprocessor = dict(size=crop_size)
