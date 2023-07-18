@@ -3,7 +3,6 @@ opencv-python
 pandas
 openslide-python
 tqdm
-imagesize
 zenodo_get
 gdown
 kaggle

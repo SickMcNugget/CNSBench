@@ -14,7 +14,6 @@ import xml.etree.ElementTree as ET
 from skimage.draw import polygon
 import numpy as np
 import cv2
-import imagesize
 from openslide import OpenSlide
 
 # Progress
@@ -51,190 +50,66 @@ class DownloaderError(Exception):
     pass
 
 class Downloader(ABC):
-    def __init__(self, zip_sources: list[str]):
-        self.zip_sources: list[str] = zip_sources
-        self.zip_paths: list[Path] = []
-        self.prefix: Path = Path("zips")
-        self.expected_zip_names = []
-
-    @property
-    def prefix(self):
-        return self._prefix
-    
-    @prefix.setter
-    def prefix(self, value):
-        self._prefix = value
-        if not self._prefix.exists():
-            self._prefix.mkdir(parents=True)
-
-    @property
-    def zip_sources(self):
-        return self._zip_sources
-
-    @zip_sources.setter
-    def zip_sources(self, value):
-        self._zip_sources = value
-
-    @property
-    def zip_paths(self):
-        return self._zip_paths
-    
-    @zip_paths.setter
-    def zip_paths(self, value):
-        self._zip_paths = value    
-
-    def download(self) -> list[Path]:
-        if not self._should_download():
-            print("Dataset already downloaded, skipping...")
-            self.zip_paths = [self.prefix / zip_name for zip_name in self.expected_zip_names]
-            return self.zip_paths
-
-        zip_paths = []
-        for zip_source in self.zip_sources:
-            zip_path = self._download(zip_source)
-            zip_paths.append(zip_path)
-
-        self.zip_paths = [self.prefix / zip_path.name for zip_path in zip_paths]
-
-        # All zips need to be moved to an appropriate location, so this is relevant
-        for src, dest in zip(zip_paths, self.zip_paths):
-            shutil.move(src, dest)
-
-        return self.zip_paths
-
-    def _should_download(self) -> bool:
-        for zip_name in self.expected_zip_names:
-            if not (self.prefix / zip_name).exists():
-                return True
-        return False
-
     @abstractmethod
-    def _download(self, zip_source: str) -> Path:
+    def download(self, zip_source: str, *args) -> Path:
         """Downloads a zip file from it's online id and returns the downloaded path"""
 
-class MoNuSegDownloader(Downloader):
-    def __init__(self, zip_sources: list[str] = ["1ZgqFJomqQGNnsx7w7QBzQQMVA16lbVCA", 
-                                             "1NKkSQ5T0ZNQ8aUhh0a8Dt2YKYCQXIViw"]):
-        super().__init__(zip_sources)
-        self.expected_zip_names = ["MoNuSeg 2018 Training Data.zip",
-                                   "MoNuSegTestData.zip"]
+class GDownloader(Downloader):
+    def __init__(self) -> None:
+        super().__init__()
 
-    def _download(self, zip_source: str) -> Path:
+    def download(self, zip_source: str) -> Path:
         zip_path = gdown.download(id=zip_source)
+
+        if zip_path is None:
+            raise DownloaderError(f"Error downloading {zip_source} from google drive")
+
         return Path(zip_path)
-    
-    def _should_download(self) -> bool:
-        for zip_name in self.expected_zip_names:
-            if not (self.prefix / zip_name).exists():
-                return True
-        return False
 
-class MoNuSACDownloader(Downloader):
-    def __init__(self, zip_sources: list[str] = ["1lxMZaAPSpEHLSxGA9KKMt_r-4S8dwLhq", 
-                                             "1G54vsOdxWY1hG7dzmkeK3r0xz9s-heyQ"]):
-        super().__init__(zip_sources)
-        self.expected_zip_names = ["MoNuSAC_images_and_annotations.zip",
-                                   "MoNuSAC Testing Data and Annotations.zip"]
+class ZenodoDownloader(Downloader):
+    def __init__(self) -> None:
+        super().__init__()
 
-    def _download(self, zip_source: str) -> Path:
-        zip_path = gdown.download(id=zip_source)
-        return Path(zip_path)
-    
-class TNBCDownloader(Downloader):
-    def __init__(self, zip_sources: list[str] = ["10.5281/zenodo.1175282"]):
-        super().__init__(zip_sources)
-        self.expected_zip_names = ["TNBC_NucleiSegmentation.zip"]
-
-    def _download(self, zip_source: str) -> Path:
+    def download(self, zip_source: str, expected_zip_names: list[Path]) -> Path:
         try:
-            subprocess.run(["zenodo_get", "-o", self.prefix, zip_source])
+            subprocess.run(["zenodo_get", zip_source])
         except FileNotFoundError:
             pass
-        return self.prefix / self.expected_zip_names[0]
+        
+        return Path(expected_zip_names[0].name)
 
-class CryoNuSegDownloader(Downloader):
-    def __init__(self, zip_sources: list[str] = ["ipateam/segmentation-of-nuclei-in-cryosectioned-he-images"]):
-        super().__init__(zip_sources)
-        self.expected_zip_names = ["segmentation-of-nuclei-in-cryosectioned-he-images.zip"]
+class KaggleDownloader(Downloader):
+    def __init__(self) -> None:
+        super().__init__()
 
-    def _download(self, zip_source: str) -> Path:
+    def download(self, zip_source: str, expected_zip_names: list[Path]) -> Path:
         try:
             ret = subprocess.run(["kaggle", 
-                                     "datasets", 
-                                     "download", 
-                                     "-p",
-                                     str(self.prefix),
-                                     "-d", 
-                                     zip_source],
-                                     stderr=subprocess.DEVNULL)
+                                  "datasets", 
+                                  "download", 
+                                  "-d", 
+                                  zip_source],
+                                  stderr=subprocess.DEVNULL)
             ret.check_returncode()
         except (FileNotFoundError, subprocess.CalledProcessError):
             raise DownloaderError("Please configure ~/.kaggle/kaggle.json. Follow the instructions" \
                 + " on their website.")
         
-        return self.prefix / self.expected_zip_names[0]
+        return Path(expected_zip_names[0].name)
 
 class Unzipper:
-    def __init__(self, zip_paths: list[Path]):
-        self.zip_paths: list[Path] = zip_paths
-        self.prefix: Path = Path("unzips")
-
-    @property
-    def prefix(self):
-        return self._prefix
+    def __init__(self) -> None:
+        pass
     
-    @prefix.setter
-    def prefix(self, value: Path):
-        self._prefix: Path = value
-        if not self._prefix.exists():
-            self._prefix.mkdir(parents=True)
-
-    @property
-    def zip_paths(self) -> list[Path]:
-        return self._zip_paths
-
-    @zip_paths.setter
-    def zip_paths(self, value):
-        self._zip_paths = value
-
-    @property
-    def unzip_paths(self) -> list[Path]:
-        unzip_paths = [self.prefix / zip_path.stem for zip_path in self.zip_paths]
-        return unzip_paths
-    
-    def unzip(self) -> list[Path]:
-        need_unzip = False
-        for unzip_path in self.unzip_paths:
-            if not unzip_path.exists():
-                need_unzip = True
+    def unzip(self, zip_path: Path, unzip_folder: Path) -> Path:
+        with ZipFile(zip_path, "r") as zfile:
+            zfile.extractall(unzip_folder)
         
-        if need_unzip:
-            for zip_path, unzip_path in zip(self.zip_paths, self.unzip_paths):
-                with ZipFile(zip_path, "r") as zfile:
-                    zfile.extractall(unzip_path)
-        else:
-            print("Unzipped data already present, skipping...")
-        
-        return self.unzip_paths
-    
-class Mover(ABC):
-    def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
-        if isinstance(dataset_root, str):
-            dataset_root = Path(dataset_root)
-        
-        dataset_name = self.__class__.__name__.split("Mover")[0]
-        self.dataset_root = dataset_root / dataset_name
-        self.unzip_paths = unzip_paths
+        return unzip_folder / zip_path.stem
 
-    @property
-    def dataset_root(self):
-        return self._dataset_root
-    
-    @dataset_root.setter
-    def dataset_root(self, value: Path):
-        self._dataset_root: Path = value
-        if not self._dataset_root.exists():
-            self._dataset_root.mkdir(parents=True)
+class Organiser(ABC):
+    def __init__(self) -> None:
+        super().__init__()
 
     def copy_folder(self, folder: Path, dest: Path):
         for image in folder.iterdir():
@@ -244,296 +119,171 @@ class Mover(ABC):
         if not (dest / src.name).exists():
             shutil.copy(src, dest)
 
-    def should_move(self, original_paths: list[Path]):
-        for path in original_paths:
-            if not path.exists() or not any(path.iterdir()):
-                return True
-        return False
+    @abstractmethod
+    def organise(self, unzip_paths: list[Path], destination_paths: list[Path], *args):
+        pass
 
-    def move_all(self):
-        original_paths = [self.dataset_root / "original" / "train",
-                          self.dataset_root / "original" / "val",
-                          self.dataset_root / "original" / "test"]
+class MoNuSegOrganiser(Organiser):
+    def __init__(self) -> None:
+        super().__init__()
 
-        if not self.should_move(original_paths):
-            print("Original data already present, skipping...")
-            return
+    def organise(self, unzip_paths: list[Path], destination_paths: list[Path]):
+        #[0] is train/val zip file
+        xmls = sorted((unzip_paths[0] / unzip_paths[0].stem).glob("**/*.xml"))
+        tifs = sorted((unzip_paths[0] / unzip_paths[0].stem).glob("**/*.tif"))
+
+        split_idx = -7
+        train_xmls, train_tifs = xmls[:split_idx], tifs[:split_idx]
+        val_xmls, val_tifs = xmls[split_idx:], tifs[split_idx:]
+
+        train_path = destination_paths[0]
+        for train_xml, train_tif in zip(train_xmls, train_tifs):
+            self.copy_if_new(train_xml, train_path)
+            self.copy_if_new(train_tif, train_path)
         
-        for path in original_paths:
-            if not path.exists():
-                path.mkdir(parents=True)
-
-        for original_path in original_paths:
-            split = original_path.stem
-            for unzip_path in self.unzip_paths:
-                if self.expected_zips[split] in str(unzip_path):
-                    move_fn = getattr(self, f"move_{split}")
-                    move_fn(original_path, unzip_path)
-
-    @abstractmethod
-    def move_train(self, train_path: Path, unzip_path: Path):
-        """Move the dataset's training data to its new directory"""
-
-    @abstractmethod
-    def move_val(self, val_path: Path, unzip_path: Path):
-        """Move the dataset's validation data to its new directory"""
-
-    @abstractmethod
-    def move_test(self, test_path: Path, unzip_path: Path):
-        """Move the dataset's testing data to its new directory"""
-
-class MoNuSegMover(Mover):
-    def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
-        super().__init__(dataset_root, unzip_paths)
-        self.expected_zips = {
-            "train": "MoNuSeg 2018 Training Data",
-            "val": "MoNuSeg 2018 Training Data",
-            "test": "MoNuSegTestData"
-        }
-
-    def move_train(self, train_path: Path, unzip_path: Path):
-        xmls = sorted((unzip_path / unzip_path.stem).glob("**/*.xml"))
-        tifs = sorted((unzip_path / unzip_path.stem).glob("**/*.tif"))
-        train_xmls = xmls[:-7]
-        train_tifs = tifs[:-7]
-
-        for xml, tif in zip(train_xmls, train_tifs):
-            self.copy_if_new(xml, train_path)
-            self.copy_if_new(tif, train_path)
-
-    def move_val(self, val_path: Path, unzip_path: Path):
-        xmls = sorted((unzip_path / unzip_path.stem).glob("**/*.xml"))
-        tifs = sorted((unzip_path / unzip_path.stem).glob("**/*.tif"))
-        val_xmls = xmls[-7:]
-        val_tifs = tifs[-7:]
-
-        for xml, tif in zip(val_xmls, val_tifs):
-            self.copy_if_new(xml, val_path)
-            self.copy_if_new(tif, val_path)
+        val_path = destination_paths[1]
+        for val_xml, val_tif in zip(val_xmls, val_tifs):
+            self.copy_if_new(val_xml, val_path)
+            self.copy_if_new(val_tif, val_path)
 
 
-    def move_test(self, test_path: Path, unzip_path: Path):
-        test_files = (unzip_path / unzip_path.stem).glob("*")
-        for test_file in test_files:
-            self.copy_if_new(test_file, test_path)
+        test_files = (unzip_paths[1] / unzip_paths[1].stem).glob("*")
+        test_path = destination_paths[2]
+        for file in test_files:
+            self.copy_if_new(file, test_path)
 
-class MoNuSACMover(Mover):
-    def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
-        super().__init__(dataset_root, unzip_paths)
-        self.expected_zips = {
-            "train": "MoNuSAC_images_and_annotations",
-            "val": "MoNuSAC_images_and_annotations",
-            "test": "MoNuSAC Testing Data and Annotations"
-        }
+class MoNuSACOrganiser(Organiser):
+    def __init__(self) -> None:
+        super().__init__()
 
-    def move_train(self, train_path: Path, unzip_path: Path):
-        patients = list((unzip_path / unzip_path.stem).glob("*"))
-        train_patients = patients[:-11]
+    def organise(self, unzip_paths: list[Path], destination_paths: list[Path]):
+        #[0] is train/val zip file
+        patients = sorted((unzip_paths[0] / unzip_paths[0].stem).glob("*"))
 
-        pooldata = [(patient, train_path) for patient in train_patients]
+        split_idx = -11
+        train_patients = patients[:split_idx]
+        val_patients = patients[split_idx:]
+
+        pooldata = [(patient, destination_paths[0]) for patient in train_patients]
         with Pool() as pool:
             for _ in tqdm(pool.istarmap(self.copy_folder, pooldata), 
                             total=len(pooldata)):
                 pass
 
-    def move_val(self, val_path: Path, unzip_path: Path):
-        patients = list((unzip_path / unzip_path.stem).glob("*"))
-        val_patients = patients[-11:]
-
-        pooldata = [(patient, val_path) for patient in val_patients]
+        pooldata = [(patient, destination_paths[1]) for patient in val_patients]
         with Pool() as pool:
             for _ in tqdm(pool.istarmap(self.copy_folder, pooldata), 
                             total=len(pooldata)):
                 pass
 
-    def move_test(self, test_path: Path, unzip_path: Path):
-        patients = (unzip_path / unzip_path.stem).glob("*")
-        pooldata = [(patient, test_path) for patient in patients]
+        test_patients = sorted((unzip_paths[1] / unzip_paths[1].stem).glob("*"))
+        
+        pooldata = [(patient, destination_paths[2]) for patient in test_patients]
         with Pool() as pool:
             for _ in tqdm(pool.istarmap(self.copy_folder, pooldata), 
                             total=len(pooldata)):
                 pass
 
-class TNBCMover(Mover):
-    def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
-        super().__init__(dataset_root, unzip_paths)
-        self.expected_zips = {
-            "train": "TNBC_NucleiSegmentation",
-            "val": "TNBC_NucleiSegmentation",
-            "test": "TNBC_NucleiSegmentation"
-        }
+class CryoNuSegOrganiser(Organiser):
+    def __init__(self) -> None:
+        super().__init__()
 
-    def move_train(self, train_path: Path, unzip_path: Path):
-        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
-        train_folders = slide_folders[:6]
+    def organise(self, unzip_paths: list[Path], destination_paths: list[Path], mask_paths: list[Path]):
+        #[0] is train/val zip file
+        train_tifs = sorted(unzip_paths[0].glob("tissue images/*[12].tif"))
+        val_test_tifs = sorted(unzip_paths[0].glob("tissue images/*3.tif"))
+        val_tifs = val_test_tifs[:5]
+        test_tifs = val_test_tifs[5:]
+
+        for train_tif in train_tifs:
+            self.copy_if_new(train_tif, destination_paths[0])
+        for val_tif in val_tifs:
+            self.copy_if_new(val_tif, destination_paths[1])
+        for test_tif in test_tifs:
+            self.copy_if_new(test_tif, destination_paths[2])
+
+        train_mask_tifs = sorted(unzip_paths[0].glob("Annotator 2*/**/mask binary without border/*[12].png"))
+        val_test_mask_tifs = sorted(unzip_paths[0].glob("Annotator 2*/**/mask binary without border/*3.png"))
+        val_mask_tifs = val_test_mask_tifs[:5]
+        test_mask_tifs = val_test_mask_tifs[5:]
+
+        for train_mask_tif in train_mask_tifs:
+            self.copy_if_new(train_mask_tif, mask_paths[0])
+        for val_mask_tif in val_mask_tifs:
+            self.copy_if_new(val_mask_tif, mask_paths[1])
+        for test_mask_tif in test_mask_tifs:
+            self.copy_if_new(test_mask_tif, mask_paths[2])
+
+class TNBCOrganiser(Organiser):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def organise(self, unzip_paths: list[Path], destination_paths: list[Path], mask_paths: list[Path]):
+        #[0] is train/val zip file
+        folders = sorted(unzip_paths[0].glob(f"**/Slide_*"))
+        train_folders = folders[:6]
+        val_folders = [folders[i] for i in [6, 9, 10]]
+        test_folders = [folders[i] for i in [7, 8]]
+
         for train_folder in train_folders:
-            self.copy_folder(train_folder, train_path)
-        
-        #TNBC is organised in an odd fashion, so these methods reflect it.
-        train_mask_path = self.dataset_root / "masks" / "train"
-        if not train_mask_path.exists():
-            train_mask_path.mkdir(parents=True)
-
-        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
-        train_mask_folders = mask_folders[:6]
-        for train_mask_folder in train_mask_folders:
-            self.copy_folder(train_mask_folder, train_mask_path)
-
-    def move_val(self, val_path: Path, unzip_path: Path):
-        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
-        val_folders = [slide_folders[i] for i in [6, 9, 10]]
+            self.copy_folder(train_folder, destination_paths[0])
         for val_folder in val_folders:
-            self.copy_folder(val_folder, val_path)
-
-        val_mask_path = self.dataset_root / "masks" / "val"
-        if not val_mask_path.exists():
-            val_mask_path.mkdir(parents=True)
-
-        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
-        val_mask_folders = [mask_folders[i] for i in [6, 9, 10]]
-        for val_mask_folder in val_mask_folders:
-            self.copy_folder(val_mask_folder, val_mask_path)
-
-    def move_test(self, test_path: Path, unzip_path: Path):
-        slide_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/Slide_*"))
-        test_folders = [slide_folders[i] for i in [7, 8]]
+            self.copy_folder(val_folder, destination_paths[1])
         for test_folder in test_folders:
-            self.copy_folder(test_folder, test_path)
-        
-        test_mask_path = self.dataset_root / "masks" / "test"
-        if not test_mask_path.exists():
-            test_mask_path.mkdir(parents=True)
+            self.copy_folder(test_folder, destination_paths[2])
 
-        mask_folders = sorted((unzip_path / unzip_path.stem).glob(f"**/GT_*"))
+        mask_folders = sorted((unzip_paths[0] / unzip_paths[0].stem).glob(f"**/GT_*"))
+        train_mask_folders = mask_folders[:6]
+        val_mask_folders = [mask_folders[i] for i in [6, 9, 10]]
         test_mask_folders = [mask_folders[i] for i in [7, 8]]
+
+        for train_mask_folder in train_mask_folders:
+            self.copy_folder(train_mask_folder, mask_paths[0])
+        for val_mask_folder in val_mask_folders:
+            self.copy_folder(val_mask_folder, mask_paths[1])
         for test_mask_folder in test_mask_folders:
-            self.copy_folder(test_mask_folder, test_mask_path)
-
-class CryoNuSegMover(Mover):
-    def __init__(self, dataset_root: str | Path, unzip_paths: list[Path]):
-        super().__init__(dataset_root, unzip_paths)
-        self.expected_zips = {
-            "train": "segmentation-of-nuclei-in-cryosectioned-he-images",
-            "val": "segmentation-of-nuclei-in-cryosectioned-he-images",
-            "test": "segmentation-of-nuclei-in-cryosectioned-he-images"
-        }
-
-    def move_train(self, train_path: Path, unzip_path: Path):
-        train_images = list(unzip_path.glob("tissue images/*[12].tif"))
-        for train_image in train_images:
-            self.copy_if_new(train_image, train_path)
-        
-        #TNBC is organised in an odd fashion, so these methods reflect it.
-        train_mask_path = self.dataset_root / "masks" / "train"
-        if not train_mask_path.exists():
-            train_mask_path.mkdir(parents=True)
-
-        for annotator in unzip_path.glob("Annotator 2*"):
-            train_masks = list(annotator.glob("**/mask binary without border/*[12].png"))
-            for train_mask in train_masks:
-                self.copy_if_new(train_mask, train_mask_path)
-
-    def move_val(self, val_path: Path, unzip_path: Path):
-        val_images = sorted(unzip_path.glob("tissue images/*3.tif"))
-        val_images = val_images[:5]
-        for val_image in val_images:
-            self.copy_if_new(val_image, val_path)
-
-    
-        val_mask_path = self.dataset_root / "masks" / "val"
-        if not val_mask_path.exists():
-            val_mask_path.mkdir(parents=True)
-
-        for annotator in unzip_path.glob("Annotator 2*"):
-            val_masks = sorted(annotator.glob("**/mask binary without border/*3.png"))
-            val_masks = val_masks[:5]
-            for val_mask in val_masks:
-                self.copy_if_new(val_mask, val_mask_path)
-
-    def move_test(self, test_path: Path, unzip_path: Path):
-        test_images = sorted(unzip_path.glob("tissue images/*3.tif"))
-        test_images = test_images[5:]
-        for test_image in test_images:
-            self.copy_if_new(test_image, test_path)
-        
-        test_mask_path = self.dataset_root / "masks" / "test"
-        if not test_mask_path.exists():
-            test_mask_path.mkdir(parents=True)
-
-        for annotator in unzip_path.glob("Annotator 2*"):
-            test_masks = sorted(annotator.glob("**/mask binary without border/*3.png"))
-            test_masks = test_masks[5:]
-            for test_mask in test_masks:
-                self.copy_if_new(test_mask, test_mask_path)
+            self.copy_folder(test_mask_folder, mask_paths[2])
 
 class MaskGenerator(ABC):
-    def __init__(self, dataset_root: str | Path):
-        if isinstance(dataset_root, str):
-            dataset_root = Path(dataset_root)
-        dataset_name = self.__class__.__name__.split("MaskGenerator")[0]
-        self.dataset_root = dataset_root / dataset_name
-    
-    @property
-    def dataset_root(self):
-        return self._dataset_root
-    
-    @dataset_root.setter
-    def dataset_root(self, value: Path):
-        self._dataset_root: Path = value
-        if not self._dataset_root.exists():
-            self._dataset_root.mkdir(parents=True)
-
-    def generate_masks(self):
-        mask_paths = [self.dataset_root / "masks" / "train",
-                      self.dataset_root / "masks" / "val",
-                      self.dataset_root / "masks" / "test"]
-        
-        original_paths = [self.dataset_root / "original" / "train",
-                          self.dataset_root / "original" / "val",
-                          self.dataset_root / "original" / "test"]
-        # Early stop if masks are already generated
-        if not self.should_generate(mask_paths):
-            print("Masks already exist, skipping generation...")
-            return
-
-        for mask_path, original_path in zip(mask_paths, original_paths):
-            if not mask_path.exists():
-                mask_path.mkdir(parents=True)
-            
-            pooldata = self._get_pooldata(mask_path, original_path)
-            with Pool() as pool:
-                for _ in tqdm(pool.istarmap(self._generate_mask, pooldata), total=len(pooldata)):
-                    pass
-
-    def should_generate(self, mask_paths: list[Path]):
-        for path in mask_paths:
-            if not path.exists() or not any(path.iterdir()):
-                return True
-        return False
+    def __init__(self) -> None:
+        super().__init__()
 
     @abstractmethod
-    def _get_pooldata(self, mask_path: Path, original_path: Path):
-        """Return data needed for mask generation as a list of tuples"""
+    def generate_masks(self, original_paths: list[Path], mask_paths: list[Path], *args):
+        pass
 
     @abstractmethod
-    def _generate_mask(self, mask_path: Path, *args):
-        """Generate a single mask for the dataset"""
+    def get_pooldata(self, original_path: Path, mask_path: Path, *args):
+        pass
+
+    @abstractmethod
+    def generate_mask(self, source_data: Path, *args):
+        pass
 
 class MoNuSegMaskGenerator(MaskGenerator):
-    def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root)
-        self.xml_parser = MoNuSegXMLParser()
+    def __init__(self, xml_parser: XMLParser) -> None:
+        super().__init__()
+        self.xml_parser = xml_parser
 
-    def _get_pooldata(self, mask_path: Path, original_path: Path):
-        patients = sorted(original_path.glob("*.xml"))
-        return [(mask_path, patient) for patient in patients]
+    def generate_masks(self, original_paths, mask_paths):
+        for original_path, mask_path in zip(original_paths, mask_paths):
+            pooldata = self.get_pooldata(original_path, mask_path)
 
-    def _generate_mask(self, mask_path: Path, patient: Path):
+            with Pool() as pool:
+                for _ in tqdm(pool.istarmap(self.generate_mask, pooldata), total=len(pooldata)):
+                    pass
+
+    def get_pooldata(self, original_path: Path, mask_path: Path):
+            patients = sorted(original_path.glob("*.xml"))
+            return [(patient, mask_path) for patient in patients]
+
+    def generate_mask(self, patient: Path, mask_path: Path):
         patient_image = patient.with_suffix(".tif")
         if not patient_image.exists():
             return
 
-        width, height = imagesize.get(patient_image)
+        height, width = cv2.imread(str(patient_image)).shape[:2]
+        
         nuclei = self.xml_parser.parse(patient)
 
         # skimage.draw.polygon uses the point-in-polygon test for accuracy!
@@ -556,24 +306,23 @@ class MoNuSegMaskGenerator(MaskGenerator):
         cv2.imwrite(filename, mask)
 
 class MoNuSACMaskGenerator(MaskGenerator):
-    def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root)
-        self.xml_parser = MoNuSACXMLParser()
-        self.label_map = {'Epithelial':1,
-                          'Lymphocyte':2,
-                          'Neutrophil':3,
-                          'Macrophage':4,
-                          'Ambiguous':5,}
-        self.masks_1cls = self.dataset_root / "masks_1cls"
-        for mask_path in [self.masks_1cls / "train", self.masks_1cls / "val", self.masks_1cls / "test"]:
-            if not mask_path.exists():
-                mask_path.mkdir(parents=True)
-    
-    def _get_pooldata(self, mask_path: Path, original_path: Path):
-        patients = sorted(original_path.glob("*.xml"))
-        return [(mask_path, patient) for patient in patients]
-    
-    def _generate_mask(self, mask_path: Path, patient: Path):
+    def __init__(self, xml_parser: XMLParser) -> None:
+        super().__init__()
+        self.xml_parser = xml_parser
+
+    def generate_masks(self, original_paths, mask_paths):
+        for original_path, mask_path in zip(original_paths, mask_paths):
+            pooldata = self.get_pooldata(original_path, mask_path)
+
+            with Pool() as pool:
+                for _ in tqdm(pool.istarmap(self.generate_mask, pooldata), total=len(pooldata)):
+                    pass
+
+    def get_pooldata(self, original_path: Path, mask_path: Path):
+            patients = sorted(original_path.glob("*.xml"))
+            return [(patient, mask_path) for patient in patients]
+
+    def generate_mask(self, patient: Path, mask_path: Path):
         patient_image = patient.with_suffix(".svs")
         if not patient_image.exists():
             return
@@ -586,83 +335,126 @@ class MoNuSACMaskGenerator(MaskGenerator):
         # skimage.draw.polygon uses the point-in-polygon test for accuracy!
         # DO NOT use opencv to draw polygons that are defined with real coordinates
         mask = np.zeros((height, width))
-        for nucleus, class_label in nuclei:
+        for nucleus in nuclei:
             rr, cc = polygon(nucleus[:,1], nucleus[:,0], mask.shape)
-            mask[rr,cc] = self.label_map[class_label]
+            mask[rr,cc] = 1
+        
+        # Perform morphological opening to remove erroneous pixels.
+        # These exist as the original annotations contain loops in the vertices.
+        # These loops result in non-convex shapes that create "holes"
+        # in the corners of the nuclei in masks which should be removed.
+        # NOTE: I cannot do this, as it would damage the annotations.
+        # This must simply be left be, as fixing the problem causes more problems,
+        # due to the fact that nuclei are so close to one another and so small.
+        # An example of the phenomenon: masks/test/TCGA-2Z-A9J9, coord (x,y): (335,73)
 
         filename = str((mask_path / patient.stem).with_suffix(".png"))
         cv2.imwrite(filename, mask)
-        
-        mask_1cls = np.zeros((height, width))
-        for nucleus, class_label in nuclei:
-            rr, cc = polygon(nucleus[:,1], nucleus[:,0], mask_1cls.shape)
-            mask_1cls[rr,cc] = 1
-
-        filename = str((self.masks_1cls / mask_path.stem / patient.stem).with_suffix(".png"))
-        cv2.imwrite(filename, mask_1cls)
-
-class TNBCMaskGenerator(MaskGenerator):
-    def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root)
-
-    def _get_pooldata(self, mask_path: Path, _):
-        masks = list(mask_path.glob("*.png"))
-        return [(mask_path, mask) for mask in masks]
-    
-    def _generate_mask(self, _, mask: Path):
-        img = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
-        img[img == 255] = 1
-        cv2.imwrite(str(mask), img)
-
-    def should_generate(self, mask_paths: list[Path]):
-        return True
 
 class CryoNuSegMaskGenerator(MaskGenerator):
-    def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root)
+    def __init__(self) -> None:
+        super().__init__()
 
-    def _get_pooldata(self, mask_path: Path, _):
-        masks = list(mask_path.glob("*.png"))
-        return [(mask_path, mask) for mask in masks]
-    
-    def _generate_mask(self, _, mask: Path):
+    def generate_masks(self, original_paths, mask_paths):
+        for original_path, mask_path in zip(original_paths, mask_paths):
+            pooldata = self.get_pooldata(original_path, mask_path)
+            
+            with Pool() as pool:
+                for _ in tqdm(pool.imap(self.generate_mask, pooldata), total=len(pooldata)):
+                    pass
+
+    def get_pooldata(self, original_path: Path, mask_path: Path):
+            masks = list(mask_path.glob("*.png"))
+            return [mask for mask in masks]
+
+    def generate_mask(self, mask: Path):
         img = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
         img[img == 255] = 1
         cv2.imwrite(str(mask), img)
 
-    def should_generate(self, mask_paths: list[Path]):
-        return True
+class TNBCMaskGenerator(MaskGenerator):
+    def __init__(self) -> None:
+        super().__init__()
 
+    def generate_masks(self, original_paths, mask_paths):
+        for original_path, mask_path in zip(original_paths, mask_paths):
+            pooldata = self.get_pooldata(original_path, mask_path)
+            
+            with Pool() as pool:
+                for _ in tqdm(pool.imap(self.generate_mask, pooldata), total=len(pooldata)):
+                    pass
+
+    def get_pooldata(self, original_path: Path, mask_path: Path):
+            masks = list(mask_path.glob("*.png"))
+            return [mask for mask in masks]
+
+    def generate_mask(self, mask: Path):
+        img = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
+        img[img == 255] = 1
+        cv2.imwrite(str(mask), img)
+
+
+# class MoNuSACMaskGenerator(MaskGenerator):
+#     def __init__(self, dataset_root: str | Path):
+#         super().__init__(dataset_root)
+#         self.xml_parser = MoNuSACXMLParser()
+#         self.label_map = {'Epithelial':1,
+#                           'Lymphocyte':2,
+#                           'Neutrophil':3,
+#                           'Macrophage':4,
+#                           'Ambiguous':5,}
+#         self.masks_1cls = self.dataset_root / "masks_1cls"
+#         for mask_path in [self.masks_1cls / "train", self.masks_1cls / "val", self.masks_1cls / "test"]:
+#             if not mask_path.exists():
+#                 mask_path.mkdir(parents=True)
+    
+#     def _get_pooldata(self, mask_path: Path, original_path: Path):
+#         patients = sorted(original_path.glob("*.xml"))
+#         return [(mask_path, patient) for patient in patients]
+    
+#     def _generate_mask(self, mask_path: Path, patient: Path):
+#         patient_image = patient.with_suffix(".svs")
+#         if not patient_image.exists():
+#             return
+
+#         slide = OpenSlide(str(patient_image))
+#         width, height = slide.level_dimensions[0]
+#         slide.close()
+#         nuclei = self.xml_parser.parse(patient)
+
+#         # skimage.draw.polygon uses the point-in-polygon test for accuracy!
+#         # DO NOT use opencv to draw polygons that are defined with real coordinates
+#         mask = np.zeros((height, width))
+#         for nucleus, class_label in nuclei:
+#             rr, cc = polygon(nucleus[:,1], nucleus[:,0], mask.shape)
+#             mask[rr,cc] = self.label_map[class_label]
+
+#         filename = str((mask_path / patient.stem).with_suffix(".png"))
+#         cv2.imwrite(filename, mask)
+        
+#         mask_1cls = np.zeros((height, width))
+#         for nucleus, class_label in nuclei:
+#             rr, cc = polygon(nucleus[:,1], nucleus[:,0], mask_1cls.shape)
+#             mask_1cls[rr,cc] = 1
+
+#         filename = str((self.masks_1cls / mask_path.stem / patient.stem).with_suffix(".png"))
+#         cv2.imwrite(filename, mask_1cls)
 
 class XMLParser(ABC):
-    def __init__(self):
-        self._xml = None
-        pass
-
-    @property
-    def xml(self) -> Path:
-        return self._xml
-    
-    @xml.setter
-    def xml(self, value: Path):
-        if self._xml is None or self._xml != value:
-            self._xml = value
-            self._xml_tree = ET.parse(self._xml)
-
-    def parse(self, xml: Path) -> list[np.ndarray]:
-        self.xml = xml
-        return self._parse()
+    def __init__(self) -> None:
+        super().__init__()
 
     @abstractmethod
-    def _parse(self) -> list[np.ndarray]:
-        """pass the xml and return a list of nuclei outlines"""
+    def parse(self, xml: Path) -> list[np.ndarray]:
+        pass
 
 class MoNuSegXMLParser(XMLParser):
     def __init__(self):
         super().__init__()
 
-    def _parse(self) -> list[np.ndarray]:
-        root = self._xml_tree.getroot()
+    def parse(self, xml: Path) -> list[np.ndarray]:
+        tree = ET.parse(xml)
+        root = tree.getroot()
     
         nuclei = []
         regions = root.findall("Annotation/Regions/Region")
@@ -685,89 +477,96 @@ class MoNuSACXMLParser(XMLParser):
     def __init__(self):
         super().__init__()
 
-    def _parse(self) -> list[np.ndarray]:
-        root = self._xml_tree.getroot()
+    def parse(self, xml: Path) -> list[np.ndarray]:
+        tree = ET.parse(xml)
+        root = tree.getroot()
     
         nuclei = []
-        annotations = root.findall("Annotation")
-        for annotation in annotations:
-            class_label = annotation.find("Attributes/Attribute").get("Name")
-            regions = annotation.findall("Regions/Region")
-            if len(regions) == 0: # Some errors in annotations
+        regions = root.findall("Annotation/Regions/Region")
+        for region in regions:
+            vertices = region.findall("Vertices/Vertex")
+
+            # Invalid region by definition
+            if len(vertices) < 3:
                 continue
-            for region in regions:
-                vertices = region.findall("Vertices/Vertex")
 
-                # Invalid region by definition
-                if len(vertices) < 3:
-                    continue
-
-                nucleus = np.zeros((len(vertices), 2))
-                for i, vertex in enumerate(vertices):
-                    nucleus[i,0] = float(vertex.get("X"))
-                    nucleus[i,1] = float(vertex.get("Y"))
-                nuclei.append((nucleus, class_label))
+            nucleus = np.zeros((len(vertices), 2))
+            for i, vertex in enumerate(vertices):
+                nucleus[i,0] = float(vertex.get("X"))
+                nucleus[i,1] = float(vertex.get("Y"))
+            nuclei.append(nucleus)
         
         return nuclei
+ 
+# This multi-class MoNuSAC XMLParser is deprecated. MoNuSAC is treated binary for this project
+# class MoNuSACXMLParser(XMLParser):
+#     def __init__(self):
+#         super().__init__()
+
+#     def parse(self, xml: Path) -> list[np.ndarray]:
+#         tree = ET.parse(xml)
+#         root = tree.getroot()
+    
+#         nuclei = []
+#         annotations = root.findall("Annotation")
+#         for annotation in annotations:
+#             class_label = annotation.find("Attributes/Attribute").get("Name")
+#             regions = annotation.findall("Regions/Region")
+#             if len(regions) == 0: # Some errors in annotations
+#                 continue
+#             for region in regions:
+#                 vertices = region.findall("Vertices/Vertex")
+
+#                 # Invalid region by definition
+#                 if len(vertices) < 3:
+#                     continue
+
+#                 nucleus = np.zeros((len(vertices), 2))
+#                 for i, vertex in enumerate(vertices):
+#                     nucleus[i,0] = float(vertex.get("X"))
+#                     nucleus[i,1] = float(vertex.get("Y"))
+#                 nuclei.append((nucleus, class_label))
+        
+#         return nuclei
 
 class Yolofier(ABC):
-    def __init__(self, dataset_root: str | Path):
-        if isinstance(dataset_root, str):
-            dataset_root = Path(dataset_root)
-        dataset_name = self.__class__.__name__.split("Yolofier")[0]
-        self.dataset_root = dataset_root / dataset_name
-
-    def yolofy(self):
-        yolofy_paths = [self.dataset_root / "yolo" / "train",
-                      self.dataset_root / "yolo" / "val",
-                      self.dataset_root / "yolo" / "test"]
-        
-        original_paths = [self.dataset_root / "original" / "train",
-                          self.dataset_root / "original" / "val",
-                          self.dataset_root / "original" / "test"]
-        
-        if not self.should_yolofy(yolofy_paths):
-            print("Yolofied data already exists, skipping...")
-            return
-
-        for yolofy_path, original_path in zip(yolofy_paths, original_paths):
-            if not yolofy_path.exists():
-                yolofy_path.mkdir(parents=True)
-            
-            pooldata = self._get_pooldata(yolofy_path, original_path)
-            with Pool() as pool:
-                for _ in tqdm(pool.istarmap(self._yolofy, pooldata), total=len(pooldata)):
-                    pass
-
-    def should_yolofy(self, yolofy_paths: list[Path]):
-        for path in yolofy_paths:
-            if not path.exists() or not any(path.iterdir()):
-                return True
-        return False
+    def __init__(self) -> None:
+        super().__init__()
 
     @abstractmethod
-    def _get_pooldata(self, yolofy_path: Path, original_path: Path, *args):
-        """Return data needed for mask generation as a list of tuples"""
+    def yolofy_files(self, original_paths: list[Path], yolofy_paths: list[Path], *args):
+        pass
 
     @abstractmethod
-    def _yolofy(self, yolofy_path: Path, *args):
-        """Generate a single mask for the dataset"""
+    def get_pooldata(self, original_path: Path, yolofy_path: Path, *args):
+        pass
+
+    @abstractmethod
+    def yolofy_file(self, source_data: Path, *args):
+        pass
+
 
 class MoNuSegYolofier(Yolofier):
-    def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root)
-        self.xml_parser = MoNuSegXMLParser()
+    def __init__(self, xml_parser: XMLParser) -> None:
+        super().__init__()
+        self.xml_parser = xml_parser
 
-    def _get_pooldata(self, yolofy_path: Path, original_path: Path):
-        patient_images = sorted(original_path.glob("*.tif"))
-        patient_xmls = sorted(original_path.glob("*.xml"))
-        pooldata = [(yolofy_path, patient_image, patient_xml) 
-                     for patient_image, patient_xml 
-                     in zip(patient_images, patient_xmls)]
-        return pooldata
+    def yolofy_files(self, original_paths, yolofy_paths):
+        for original_path, yolofy_path in zip(original_paths, yolofy_paths):
+            pooldata = self.get_pooldata(original_path, yolofy_path)
+            
+            with Pool() as pool:
+                for _ in tqdm(pool.istarmap(self.yolofy_file, pooldata), total=len(pooldata)):
+                    pass
 
-    def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_xml: Path):
-        if not patient_image.exists() or not patient_xml.exists():
+    def get_pooldata(self, original_path: Path, yolofy_path: Path):
+            patients = sorted(original_path.glob("*.xml"))
+            return [(patient, yolofy_path) for patient in patients]
+
+    def yolofy_file(self, patient_xml: Path, yolofy_path: Path):
+        patient_image = patient_xml.with_suffix(".tif")
+
+        if not patient_image.exists():
             return
 
         # YOLOv8 requires .png images
@@ -801,138 +600,82 @@ class MoNuSegYolofier(Yolofier):
             annotations += f" {nucleus[0, 0]} {nucleus[0, 1]}\n"
 
         return annotations
-    
+
 class MoNuSACYolofier(Yolofier):
-    def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root)
-        self.xml_parser = MoNuSACXMLParser()
-        self.label_map = {'Epithelial': 1,
-                          'Lymphocyte': 2,
-                          'Neutrophil': 3,
-                          'Macrophage': 4,
-                          'Ambiguous': 5,}
-        self.yolofy_1cls = self.dataset_root / "yolo_1cls"
-        for yolofy_path in [self.yolofy_1cls / "train", self.yolofy_1cls / "val", self.yolofy_1cls / "test"]:
-            if not yolofy_path.exists():
-                yolofy_path.mkdir(parents=True)
+    def __init__(self, xml_parser: XMLParser) -> None:
+        super().__init__()
+        self.xml_parser = xml_parser
 
+    def yolofy_files(self, original_paths, yolofy_paths):
+        for original_path, yolofy_path in zip(original_paths, yolofy_paths):
+            pooldata = self.get_pooldata(original_path, yolofy_path)
+            
+            with Pool() as pool:
+                for _ in tqdm(pool.istarmap(self.yolofy_file, pooldata), total=len(pooldata)):
+                    pass
 
-    def _get_pooldata(self, yolofy_path: Path, original_path: Path):
-        patient_images = sorted(original_path.glob("*.svs"))
-        patient_xmls = sorted(original_path.glob("*.xml"))
-        pooldata = [(yolofy_path, patient_image, patient_xml) 
-                     for patient_image, patient_xml 
-                     in zip(patient_images, patient_xmls)]
-        return pooldata
+    def get_pooldata(self, original_path: Path, yolofy_path: Path):
+            patients = sorted(original_path.glob("*.xml"))
+            return [(patient, yolofy_path) for patient in patients]
 
-    def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_xml: Path):
-        if not patient_image.exists() or not patient_xml.exists():
+    def yolofy_file(self, patient_xml: Path, yolofy_path: Path):
+        patient_image = patient_xml.with_suffix(".svs")
+
+        if not patient_image.exists():
             return
 
-        # YOLOv8 requires .png images
         slide = OpenSlide(str(patient_image))
         filename = str((yolofy_path / patient_image.stem).with_suffix(".png"))
-        filename_1cls = str((self.yolofy_1cls / yolofy_path.stem / patient_image.stem).with_suffix(".png"))
-
         slide.get_thumbnail(slide.level_dimensions[0]).save(filename)
-        slide.get_thumbnail(slide.level_dimensions[0]).save(filename_1cls)
         width, height = slide.level_dimensions[0]
         slide.close()
 
         nuclei = self.xml_parser.parse(patient_xml)
-        
-        normalised_contours = []
-        for nucleus, class_label in nuclei:
+
+        normalised_nuclei = []
+        for nucleus in nuclei:
             nucleus[:,0] /= width
             nucleus[:,1] /= height
-            normalised_contours.append((nucleus, class_label))
+            normalised_nuclei.append(nucleus)
 
-        annotations = self.nuclei_to_annotations(normalised_contours)
-        annotations_1cls = self.nuclei_to_annotations(normalised_contours, multiclass=False)
+        annotations = self.nuclei_to_annotations(normalised_nuclei)
 
         filename = (yolofy_path / patient_image.stem).with_suffix(".txt")
         with open(filename, "w") as f:
             f.write(annotations)
 
-        filename_1cls = (self.yolofy_1cls / yolofy_path.stem / patient_image.stem).with_suffix(".txt")
-        with open(filename_1cls, "w") as f:
-            f.write(annotations_1cls)
-
-    def nuclei_to_annotations(self, nuclei: list[tuple[np.ndarray, str]], multiclass=True) -> str:
+    def nuclei_to_annotations(self, nuclei: np.ndarray) -> str:
         annotations = ""
         
-        for nucleus, class_label in nuclei:
-            if multiclass:
-                annotations += str(self.label_map[class_label])
-            else:
-                annotations += "0"
-
+        for nucleus in nuclei:
+            annotations += "0"
             for vertex in nucleus:
                 annotations += f" {vertex[0]} {vertex[1]}"
             # close off the nucleus polygon (using first vertex of contour)
             annotations += f" {nucleus[0, 0]} {nucleus[0, 1]}\n"
 
         return annotations
-    
-class TNBCYolofier(Yolofier):
-    def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root)
 
-    def _get_pooldata(self, yolofy_path: Path, original_path: Path):
-        patient_imgs = sorted(original_path.glob("*.png"))
-        mask_path = self.dataset_root / "masks" / original_path.stem
-        patient_masks = sorted(mask_path.glob("*.png"))
-        return [(yolofy_path, patient_img, patient_mask)
-                for patient_img, patient_mask
-                in zip(patient_imgs, patient_masks)]
-    
-    def _yolofy(self, yolofy_path: Path, patient_img: Path, patient_mask: Path):
-        # original image is already a PNG
-        shutil.copy(patient_img, (yolofy_path / patient_img.name))
-
-        mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
-        height, width = mask.shape[:2]
-        
-        nuclei = cv2.findContours(mask,
-                                    cv2.RETR_EXTERNAL,
-                                    cv2.CHAIN_APPROX_SIMPLE)[0]
-        
-        normalised_nuclei = []
-        for nucleus in nuclei:
-            float_nucleus = nucleus.astype(float)
-            float_nucleus[:,:,0] /= width
-            float_nucleus[:,:,1] /= height
-            normalised_nuclei.append(float_nucleus)
-
-        annotations = self.nuclei_to_annotations(normalised_nuclei)
-
-        filename = yolofy_path / patient_mask.with_suffix(".txt").name
-        with open(filename, "w") as f:
-            f.write(annotations)
-
-    def nuclei_to_annotations(self, nuclei):
-        annotations = ""
-        for nucleus in nuclei:
-            annotations += "0"
-            for vertex in nucleus:
-                annotations += f" {vertex[0, 0]} {vertex[0, 1]}"
-            annotations += f" {nucleus[0, 0, 0]} {nucleus[0, 0, 1]}\n"
-        return annotations
-    
 class CryoNuSegYolofier(Yolofier):
-    def __init__(self, dataset_root: str | Path):
-        super().__init__(dataset_root)
+    def __init__(self) -> None:
+        super().__init__()
 
-    def _get_pooldata(self, yolofy_path: Path, original_path: Path):
+    def yolofy_files(self, original_paths: list[Path], yolofy_paths: list[Path], mask_paths: list[Path]):
+        for original_path, yolofy_path, mask_path in zip(original_paths, yolofy_paths, mask_paths):
+            pooldata = self.get_pooldata(original_path, yolofy_path, mask_path)
+            
+            with Pool() as pool:
+                for _ in tqdm(pool.istarmap(self.yolofy_file, pooldata), total=len(pooldata)):
+                    pass
+
+    def get_pooldata(self, original_path: Path, yolofy_path: Path, mask_path: Path):
         patient_imgs = sorted(original_path.glob("*.tif"))
-        mask_path = self.dataset_root / "masks" / original_path.stem
         patient_masks = sorted(mask_path.glob("*.png"))
-        return [(yolofy_path, patient_img, patient_mask)
+        return [(patient_img, patient_mask, yolofy_path)
                 for patient_img, patient_mask
                 in zip(patient_imgs, patient_masks)]
     
-    def _yolofy(self, yolofy_path: Path, patient_img: Path, patient_mask: Path):
-        # original image is already a PNG
+    def yolofy_file(self, patient_img: Path, patient_mask: Path, yolofy_path: Path):
         img = cv2.imread(str(patient_img))
         cv2.imwrite(str(yolofy_path / patient_img.with_suffix(".png").name), img)
 
@@ -964,3 +707,445 @@ class CryoNuSegYolofier(Yolofier):
                 annotations += f" {vertex[0, 0]} {vertex[0, 1]}"
             annotations += f" {nucleus[0, 0, 0]} {nucleus[0, 0, 1]}\n"
         return annotations
+    
+
+class TNBCYolofier(Yolofier):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def yolofy_files(self, original_paths: list[Path], yolofy_paths: list[Path], mask_paths: list[Path]):
+        for original_path, yolofy_path, mask_path in zip(original_paths, yolofy_paths, mask_paths):
+            pooldata = self.get_pooldata(original_path, yolofy_path, mask_path)
+            
+            with Pool() as pool:
+                for _ in tqdm(pool.istarmap(self.yolofy_file, pooldata), total=len(pooldata)):
+                    pass
+    
+    def get_pooldata(self, original_path: Path, yolofy_path: Path, mask_path: Path):
+        patient_imgs = sorted(original_path.glob("*.png"))
+        patient_masks = sorted(mask_path.glob("*.png"))
+        return [(patient_img, patient_mask, yolofy_path)
+                for patient_img, patient_mask
+                in zip(patient_imgs, patient_masks)]
+    
+    def yolofy_file(self, patient_img: Path, patient_mask: Path, yolofy_path: Path):
+        # original image is already a PNG
+        shutil.copy(patient_img, (yolofy_path / patient_img.name))
+        
+        mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
+        height, width = mask.shape[:2]
+        
+        nuclei = cv2.findContours(mask,
+                                  cv2.RETR_EXTERNAL,
+                                  cv2.CHAIN_APPROX_SIMPLE)[0]
+        
+        normalised_nuclei = []
+        for nucleus in nuclei:
+            float_nucleus = nucleus.astype(float)
+            float_nucleus[:,:,0] /= width
+            float_nucleus[:,:,1] /= height
+            normalised_nuclei.append(float_nucleus)
+
+        annotations = self.nuclei_to_annotations(normalised_nuclei)
+
+        filename = yolofy_path / patient_mask.with_suffix(".txt").name
+        with open(filename, "w") as f:
+            f.write(annotations)
+
+    def nuclei_to_annotations(self, nuclei):
+        annotations = ""
+        for nucleus in nuclei:
+            annotations += "0"
+            for vertex in nucleus:
+                annotations += f" {vertex[0, 0]} {vertex[0, 1]}"
+            annotations += f" {nucleus[0, 0, 0]} {nucleus[0, 0, 1]}\n"
+        return annotations
+
+
+# class MoNuSACYolofier(Yolofier):
+#     def __init__(self, dataset_root: str | Path):
+#         super().__init__(dataset_root)
+#         self.xml_parser = MoNuSACXMLParser()
+#         self.label_map = {'Epithelial': 1,
+#                           'Lymphocyte': 2,
+#                           'Neutrophil': 3,
+#                           'Macrophage': 4,
+#                           'Ambiguous': 5,}
+#         self.yolofy_1cls = self.dataset_root / "yolo_1cls"
+#         for yolofy_path in [self.yolofy_1cls / "train", self.yolofy_1cls / "val", self.yolofy_1cls / "test"]:
+#             if not yolofy_path.exists():
+#                 yolofy_path.mkdir(parents=True)
+
+
+#     def _get_pooldata(self, yolofy_path: Path, original_path: Path):
+#         patient_images = sorted(original_path.glob("*.svs"))
+#         patient_xmls = sorted(original_path.glob("*.xml"))
+#         pooldata = [(yolofy_path, patient_image, patient_xml) 
+#                      for patient_image, patient_xml 
+#                      in zip(patient_images, patient_xmls)]
+#         return pooldata
+
+#     def _yolofy(self, yolofy_path: Path, patient_image: Path, patient_xml: Path):
+#         if not patient_image.exists() or not patient_xml.exists():
+#             return
+
+#         # YOLOv8 requires .png images
+#         slide = OpenSlide(str(patient_image))
+#         filename = str((yolofy_path / patient_image.stem).with_suffix(".png"))
+#         filename_1cls = str((self.yolofy_1cls / yolofy_path.stem / patient_image.stem).with_suffix(".png"))
+
+#         slide.get_thumbnail(slide.level_dimensions[0]).save(filename)
+#         slide.get_thumbnail(slide.level_dimensions[0]).save(filename_1cls)
+#         width, height = slide.level_dimensions[0]
+#         slide.close()
+
+#         nuclei = self.xml_parser.parse(patient_xml)
+        
+#         normalised_contours = []
+#         for nucleus, class_label in nuclei:
+#             nucleus[:,0] /= width
+#             nucleus[:,1] /= height
+#             normalised_contours.append((nucleus, class_label))
+
+#         annotations = self.nuclei_to_annotations(normalised_contours)
+#         annotations_1cls = self.nuclei_to_annotations(normalised_contours, multiclass=False)
+
+#         filename = (yolofy_path / patient_image.stem).with_suffix(".txt")
+#         with open(filename, "w") as f:
+#             f.write(annotations)
+
+#         filename_1cls = (self.yolofy_1cls / yolofy_path.stem / patient_image.stem).with_suffix(".txt")
+#         with open(filename_1cls, "w") as f:
+#             f.write(annotations_1cls)
+
+#     def nuclei_to_annotations(self, nuclei: list[tuple[np.ndarray, str]], multiclass=True) -> str:
+#         annotations = ""
+        
+#         for nucleus, class_label in nuclei:
+#             if multiclass:
+#                 annotations += str(self.label_map[class_label])
+#             else:
+#                 annotations += "0"
+
+#             for vertex in nucleus:
+#                 annotations += f" {vertex[0]} {vertex[1]}"
+#             # close off the nucleus polygon (using first vertex of contour)
+#             annotations += f" {nucleus[0, 0]} {nucleus[0, 1]}\n"
+
+#         return annotations
+
+class Dataset(ABC):
+    def __init__(self, 
+                 dataset_root: Path | str,
+                 zip_folder: Path | str,
+                 unzip_folder: Path | str) -> None:
+        if isinstance(dataset_root, str):
+            dataset_root = Path(dataset_root)
+        if isinstance(zip_folder, str):
+            zip_folder = Path(zip_folder)
+        if isinstance(unzip_folder, str):
+            unzip_folder = Path(unzip_folder)
+
+        self.dataset_root = dataset_root
+        self.zip_folder = zip_folder
+        self.unzip_folder = unzip_folder
+
+    @property
+    def dataset_name(self) -> str:
+        return self.__class__.__name__.split("Dataset")[0]
+    
+    @property
+    def zip_sources(self) -> list[str]:
+        return self.__class__.ZIP_SOURCES
+
+    @property
+    def expected_zip_names(self) -> list[Path]:
+        expected_zip_names = self.__class__.ZIP_NAMES
+        if any(isinstance(zip_name, str) for zip_name in expected_zip_names):
+            expected_zip_names = [Path(zip_name) for zip_name in expected_zip_names]
+        return expected_zip_names
+    
+    @property
+    def original_paths(self) -> list[Path]:
+        original_paths = [self.dataset_root / self.dataset_name / "original" / "train",
+                          self.dataset_root / self.dataset_name / "original" / "val",
+                          self.dataset_root / self.dataset_name / "original" / "test"]
+        return original_paths
+
+    @property
+    def mask_paths(self) -> list[Path]:
+        mask_paths = [self.dataset_root / self.dataset_name / "masks" / "train",
+                          self.dataset_root / self.dataset_name / "masks" / "val",
+                          self.dataset_root / self.dataset_name / "masks" / "test"]
+        return mask_paths
+
+    @property
+    def yolofy_paths(self) -> list[Path]:
+        yolofy_paths = [self.dataset_root / self.dataset_name / "yolo" / "train",
+                          self.dataset_root / self.dataset_name / "yolo" / "val",
+                          self.dataset_root / self.dataset_name / "yolo" / "test"]
+        return yolofy_paths
+
+    def download(self, downloader: Downloader) -> list[Path]:
+        zip_paths = []
+        
+        if not self.requires_download():
+            print(f"{self.dataset_name} already downloaded, skipping...")
+            zip_paths = [self.zip_folder / zip_name.name for zip_name in self.expected_zip_names]
+        else:
+            for zip_source in self.zip_sources:
+                downloaded_zip_path = downloader.download(zip_source)
+                shutil.move(downloaded_zip_path, self.zip_folder)
+                zip_paths.append(self.zip_folder / downloaded_zip_path.name)
+
+        return zip_paths
+    
+    def requires_download(self) -> bool:
+        for zip_name in self.expected_zip_names:
+            if not (self.zip_folder / zip_name.name).exists():
+                return True
+        return False
+
+    def unzip(self, unzipper: Unzipper, zip_paths: list[Path]) -> list[Path]:
+        unzip_paths = []
+
+        if not self.requires_unzip():
+            print(f"{self.dataset_name} already unzipped, skipping...")
+            unzip_paths = [self.unzip_folder / zip_name.stem for zip_name in self.expected_zip_names]
+        else:
+            for zip_path in zip_paths:
+                unzip_path = unzipper.unzip(zip_path, (self.unzip_folder / zip_path.stem))
+                unzip_paths.append(unzip_path)
+
+        return unzip_paths
+
+    def requires_unzip(self) -> bool:
+        for zip_name in self.expected_zip_names:
+            if not (self.unzip_folder / zip_name.stem).exists():
+                return True
+        return False
+    
+    def organise(self, organiser: Organiser, unzip_paths: list[Path]):
+        if not self.requires_organise():
+            print(f"{self.dataset_name} already organised, skipping...")
+        else:
+            organiser.organise(unzip_paths, self.original_paths)
+
+    def requires_organise(self):
+        for path in self.original_paths:
+            if not path.exists() or not any(path.iterdir()):
+                return True
+        return False
+
+    def generate_masks(self, mask_generator: MaskGenerator):
+        if not self.requires_generate_masks():
+            print(f"{self.dataset_name} already has generated masks, skipping...")
+        else:
+            mask_generator.generate_masks(self.original_paths, self.mask_paths)
+
+    def requires_generate_masks(self):
+        for path in self.mask_paths:
+            if not path.exists() or not any(path.iterdir()):
+                return True
+        return False
+    
+    def yolofy(self, yolofier: Yolofier):
+        if not self.requires_yolofy():
+            print(f"{self.dataset_name} already has yolo-trainable data, skipping...")
+        else:
+            yolofier.yolofy_files(self.original_paths, self.yolofy_paths)
+
+    def requires_yolofy(self):
+        for path in self.yolofy_paths:
+            if not path.exists() or not any(path.iterdir()):
+                return True
+        return False
+
+    def make_paths(self, paths: list[Path]):
+        for path in paths:
+            if not path.exists():
+                path.mkdir(parents=True)
+
+class MoNuSegDataset(Dataset):
+    ZIP_SOURCES = ["1ZgqFJomqQGNnsx7w7QBzQQMVA16lbVCA", "1NKkSQ5T0ZNQ8aUhh0a8Dt2YKYCQXIViw"]
+    ZIP_NAMES = ["MoNuSeg 2018 Training Data.zip", "MoNuSegTestData.zip"]
+
+    def __init__(self, dataset_root: Path, **kwargs) -> None:
+        super().__init__(dataset_root, **kwargs)
+        
+
+class MoNuSACDataset(Dataset):
+    ZIP_SOURCES = ["1lxMZaAPSpEHLSxGA9KKMt_r-4S8dwLhq", "1G54vsOdxWY1hG7dzmkeK3r0xz9s-heyQ"]
+    ZIP_NAMES = ["MoNuSAC_images_and_annotations.zip", "MoNuSAC Testing Data and Annotations.zip"]
+
+    def __init__(self, dataset_root: Path, **kwargs) -> None:
+        super().__init__(dataset_root, **kwargs)
+
+class CryoNuSegDataset(Dataset):
+    ZIP_SOURCES = ["ipateam/segmentation-of-nuclei-in-cryosectioned-he-images"]
+    ZIP_NAMES = ["segmentation-of-nuclei-in-cryosectioned-he-images.zip"]
+
+    def __init__(self, dataset_root: Path, **kwargs) -> None:
+        super().__init__(dataset_root, **kwargs)
+
+    def download(self, downloader: Downloader) -> list[Path]:
+        zip_paths = []
+        
+        if not self.requires_download():
+            print(f"{self.dataset_name} already downloaded, skipping...")
+            zip_paths = [self.zip_folder / zip_name.name for zip_name in self.expected_zip_names]
+        else:
+            for zip_source in self.zip_sources:
+                downloaded_zip_path = downloader.download(zip_source, self.expected_zip_names)
+                shutil.move(downloaded_zip_path, self.zip_folder)
+                zip_paths.append(self.zip_folder / downloaded_zip_path.name)
+
+        return zip_paths
+
+    def organise(self, organiser: Organiser, unzip_paths: list[Path]):
+        if not self.requires_organise():
+            print(f"{self.dataset_name} already organised, skipping...")
+        else:
+            organiser.organise(unzip_paths, self.original_paths, self.mask_paths)
+
+    def requires_generate_masks(self):
+        for path in self.mask_paths:
+            if not path.exists() or not any(path.iterdir()):
+                return True
+            
+            # Check one file each directory to see if it has been converted
+            for file in path.iterdir():
+                img = cv2.imread(str(file), cv2.IMREAD_GRAYSCALE)
+                if np.max(img) == 255:
+                    return True
+                break
+
+        return False
+    
+    def yolofy(self, yolofier: Yolofier):
+        if not self.requires_yolofy():
+            print(f"{self.dataset_name} already has yolo-trainable data, skipping...")
+        else:
+            yolofier.yolofy_files(self.original_paths, self.yolofy_paths, self.mask_paths)
+
+class TNBCDataset(Dataset):
+    ZIP_SOURCES = ["10.5281/zenodo.1175282"]
+    ZIP_NAMES = ["TNBC_NucleiSegmentation.zip"]
+
+    def __init__(self, dataset_root: Path, **kwargs) -> None:
+        super().__init__(dataset_root, **kwargs)
+
+    def download(self, downloader: Downloader) -> list[Path]:
+        zip_paths = []
+        
+        if not self.requires_download():
+            print(f"{self.dataset_name} already downloaded, skipping...")
+            zip_paths = [self.zip_folder / zip_name.name for zip_name in self.expected_zip_names]
+        else:
+            for zip_source in self.zip_sources:
+                downloaded_zip_path = downloader.download(zip_source, self.expected_zip_names)
+                shutil.move(downloaded_zip_path, self.zip_folder)
+                zip_paths.append(self.zip_folder / downloaded_zip_path.name)
+
+        return zip_paths
+
+    def organise(self, organiser: Organiser, unzip_paths: list[Path]):
+        if not self.requires_organise():
+            print(f"{self.dataset_name} already organised, skipping...")
+        else:
+            organiser.organise(unzip_paths, self.original_paths, self.mask_paths)
+
+    def requires_generate_masks(self):
+        for path in self.mask_paths:
+            if not path.exists() or not any(path.iterdir()):
+                return True
+            
+            # Check one file each directory to see if it has been converted
+            for file in path.iterdir():
+                img = cv2.imread(str(file), cv2.IMREAD_GRAYSCALE)
+                if np.max(img) == 255:
+                    return True
+                break
+
+        return False
+
+    def yolofy(self, yolofier: Yolofier):
+        if not self.requires_yolofy():
+            print(f"{self.dataset_name} already has yolo-trainable data, skipping...")
+        else:
+            yolofier.yolofy_files(self.original_paths, self.yolofy_paths, self.mask_paths)
+
+
+class DatasetManager:
+    def __init__(self, dataset_root: Path | str) -> None:
+        if isinstance(dataset_root, str):
+            dataset_root = Path(dataset_root)
+        self.dataset_root = dataset_root
+
+    @property
+    def zip_folder(self):
+        return self.dataset_root / "zips"
+
+    @property
+    def unzip_folder(self):
+        return self.dataset_root / "unzips"
+
+    def create_directories(self, dataset: Dataset):
+        if not self.zip_folder.exists():
+            self.zip_folder.mkdir()
+        if not self.unzip_folder.exists():
+            self.unzip_folder.mkdir()
+
+        dataset.make_paths(dataset.original_paths)
+        dataset.make_paths(dataset.mask_paths)
+        dataset.make_paths(dataset.yolofy_paths)
+
+    def prepare(self, dataset_name: str):
+        if dataset_name.lower() == "monuseg":
+            dataset = MoNuSegDataset(self.dataset_root, zip_folder=self.zip_folder, unzip_folder=self.unzip_folder)
+            downloader = GDownloader()
+            organiser = MoNuSegOrganiser()
+            xml_parser = MoNuSegXMLParser()
+            mask_generator = MoNuSegMaskGenerator(xml_parser=xml_parser)
+            yolofier = MoNuSegYolofier(xml_parser=xml_parser)
+        elif dataset_name.lower() == "monusac":
+            dataset = MoNuSACDataset(self.dataset_root, zip_folder=self.zip_folder, unzip_folder=self.unzip_folder)
+            downloader = GDownloader()
+            organiser = MoNuSACOrganiser()
+            xml_parser = MoNuSACXMLParser()
+            mask_generator = MoNuSACMaskGenerator(xml_parser=xml_parser)
+            yolofier = MoNuSACYolofier(xml_parser=xml_parser)
+        elif dataset_name.lower() == "cryonuseg":
+            dataset = CryoNuSegDataset(self.dataset_root, zip_folder=self.zip_folder, unzip_folder=self.unzip_folder)
+            downloader = KaggleDownloader()
+            organiser = CryoNuSegOrganiser()
+            mask_generator = CryoNuSegMaskGenerator()
+            yolofier = CryoNuSegYolofier()
+        elif dataset_name.lower() == "tnbc":
+            dataset = TNBCDataset(self.dataset_root, zip_folder=self.zip_folder, unzip_folder=self.unzip_folder)
+            downloader = ZenodoDownloader()
+            organiser = TNBCOrganiser()
+            mask_generator = TNBCMaskGenerator()
+            yolofier = TNBCYolofier()
+
+        unzipper = Unzipper()
+
+        try:
+            self.create_directories(dataset)
+
+            print(f"Attempting to download {dataset.dataset_name}")
+            zip_paths = dataset.download(downloader)
+
+            print(f"\nUnzipping {dataset.dataset_name}")
+            unzip_paths = dataset.unzip(unzipper, zip_paths)
+
+            print(f"\nOrganising {dataset.dataset_name}")
+            dataset.organise(organiser, unzip_paths)
+
+            print(f"\nGenerate masks for {dataset.dataset_name}")
+            dataset.generate_masks(mask_generator)
+
+            print(f"\nCreating YOLO compatible training data for {dataset.dataset_name}\n")
+            dataset.yolofy(yolofier)
+        except DownloaderError as e:
+            print(e)

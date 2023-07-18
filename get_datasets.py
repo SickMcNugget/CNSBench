@@ -1,42 +1,13 @@
 from pathlib import Path
 import argparse
-import importlib
-from cnsbench.datasets import Unzipper, DownloaderError
+from cnsbench.datasets import DatasetManager
 
 def main(args: argparse.Namespace):
+    manager = DatasetManager(args.dataset_root)
+
     for dataset in args.datasets:
-        print(f"-- {dataset} --")
-        get_dataset(dataset, args)
-
-def get_dataset(dataset: str, args: argparse.Namespace):
-    print(f"Attempting to download {dataset}")
-    downloader_cls = get_dataset_class(dataset, "Downloader")
-
-    try:
-        zip_paths = downloader_cls().download()
-    
-        print(f"\nUnzipping {dataset}")
-        unzip_paths = Unzipper(zip_paths).unzip()
-
-        print(f"\nOrganising {dataset}")
-        mover_cls = get_dataset_class(dataset, "Mover")
-        mover_cls(args.dataset_root, unzip_paths).move_all()
-
-        print(f"\nGenerate masks for {dataset}")
-        mask_generator_cls = get_dataset_class(dataset, "MaskGenerator")
-        mask_generator_cls(args.dataset_root).generate_masks()
-
-        print(f"\nCreating YOLO compatible training data for {dataset}\n")
-        yolofier_cls = get_dataset_class(dataset, "Yolofier")
-        yolofier_cls(args.dataset_root).yolofy()
-    except DownloaderError as e:
-        print(e)
-
-def get_dataset_class(dataset: str, class_type: str):
-    module = importlib.import_module("cnsbench.datasets")
-    dataset_class = getattr(module, f"{dataset}{class_type}")
-    return dataset_class
-
+        manager.prepare(dataset)
+ 
 def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "TNBC", "CryoNuSeg"]
     parser = argparse.ArgumentParser()
