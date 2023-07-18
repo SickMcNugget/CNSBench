@@ -1,11 +1,5 @@
-MoNuSeg
-MoNuSAC
-TNBC
-CryoNuSeg
-zips
-unzips
-profile
-pca/
+datasets
+final_preds
 *.pyc
 yolo_to_mask
 mmsegmentation
