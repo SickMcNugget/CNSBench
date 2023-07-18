@@ -8,3 +8,4 @@ profile
 pca/
 *.pyc
 yolo_to_mask
+mmsegmentation
