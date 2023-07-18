@@ -219,7 +219,6 @@ def get_args() -> argparse.Namespace:
     MODELS = ["deeplabv3plus", "unet"]
 
     parser = argparse.ArgumentParser("Training script for training models on the mmsegmentation architecture")
-    parser.add_argument("-c", "--config", type=Path, required=True, help="The configuration file to use for training")
     #parser.add_argument("--project", type=str, required=True, help="The name to use for saving project data")
     parser.add_argument("--batch", type=int, default=2, help="The batch size to use during training")
     parser.add_argument("--wandb", action="store_true", help="Enables Weights and Biases for logging results")
