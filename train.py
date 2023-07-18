@@ -21,9 +21,9 @@ def get_config(dataset: str, normalised: bool, model: str):
                         config = "config/deeplabv3plus_r50-d8_1xb1-20k_monuseg-512x512.py"
                 case 'unet':
                     if normalised:
-                        config = "3"
+                        config = "config/unet_s5-d16_fcn_1xb1-20k_monuseg_norm-512x512.py"
                     else:
-                        config = "4"
+                        config = "config/unet_s5-d16_fcn_1xb1-20k_monuseg-512x512.py"
                 case default:
                     return "Model chosen does not exist"
         case 'monusac':
@@ -35,9 +35,9 @@ def get_config(dataset: str, normalised: bool, model: str):
                         config = "config/deeplabv3plus_r50-d8_1xb1-20k_monusac-512x512.py"
                 case 'unet':
                     if normalised:
-                        config = "7"
+                        config = "config/unet_s5-d16_fcn_1xb1-20k_monusac_norm-512x512.py"
                     else:
-                        config = "8"
+                        config = "config/unet_s5-d16_fcn_1xb1-20k_monusac-512x512.py"
                 case default:
                     return "Model chosen does not exist"
         case 'cryonuseg':
@@ -49,9 +49,9 @@ def get_config(dataset: str, normalised: bool, model: str):
                         config = "config/deeplabv3plus_r50-d8_1xb1-20k_cryonuseg-512x512.py"
                 case 'unet':
                     if normalised:
-                        config = "11"
+                        config = "config/unet_s5-d16_fcn_1xb2-20k_cryonuseg_norm-512x512.py"
                     else:
-                        config = "12"
+                        config = "config/unet_s5-d16_fcn_1xb2-20k_cryonuseg-512x512.py"
                 case default:
                     return "Model chosen does not exist"
         case 'tnbc':
@@ -63,9 +63,9 @@ def get_config(dataset: str, normalised: bool, model: str):
                         config = "config/deeplabv3plus_r50-d8_1xb1-20k_tnbc-512x512.py"
                 case 'unet':
                     if normalised:
-                        config = "15"
+                        config = "config/unet_s5-d16_fcn_1xb2-20k_tnbc_norm-512x512.py"
                     else:
-                        config = "16"
+                        config = "config/unet_s5-d16_fcn_1xb2-20k_tnbc-512x512.py"
                 case default:
                     return "Model chosen does not exist"
         case default:
