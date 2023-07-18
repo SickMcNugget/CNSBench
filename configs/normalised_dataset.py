@@ -1,5 +1,3 @@
-__base__ = ["default_dataset.py"]
-
 img_dir = "yolo_sn"
 
 train_dataloader = dict(
