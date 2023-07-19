@@ -1,54 +1,37 @@
 import argparse
-from pathlib import Path
-import datetime
-import importlib
-import os
+from ultralytics import YOLO
+from wandb.integration.yolov8 import add_callbacks as add_wandb_callbacks
 
 def get_config(dataset: str, normalised: bool):
-    config = ""
-    match dataset.lower():
-        case 'monuseg':
-            if normalised:
-                config = "yaml/monuseg_norm.yaml"
-            else:
-                config = "yaml/monuseg.yaml"
-        case 'monusac':
-            if normalised:
-                config = "yaml/monusac_norm.yaml"
-            else:
-                config = "yaml/monusac.yaml"
-        case 'cryonuseg':
-            if normalised:
-                config = "yaml/cryonuseg_norm.yaml"
-            else:
-                config = "yaml/cryonuseg.yaml"
-        case 'tnbc':
-            if normalised:
-                config = "yaml/tnbc_norm.yaml"
-            else:
-                config = "yaml/tnbc.yaml"
-        case default:
-            return "Dataset chosen does not exist"
+    config = f"configs/yamls/{dataset.lower()}"
+    if normalised:
+        config = f"{config}_norm"
+    config += ".yaml"
     return config
 
+def get_name(args: argparse.Namespace):
+    name = f"yolov8l_1b{args.batch}-{args.epochs}e_{args.dataset.lower()}"
+    if args.normalised:
+        name += "_norm"
+    name += "-640x640"
+    return name
 
 def main(args: argparse.Namespace):
     # -- Grab the dataset config for model -- #
     data = get_config(args.dataset, args.normalised)
     print('[*] Config loaded: ' + data)
 
-    # -- Model to load -- #
-    model = "yolov8l-seg.pt"
-
-    # -- full loader -- #
-    cuda = "CUDA_VISIBLE_DEVICES='0'"
-    name = "yolov8_1xb"+str(args.batch)+"-"+str(args.epochs)+"e_"+args.dataset.lower()+"-640x640"
-    loader =cuda+" yolo segment train"+" data="+data+" model="+model+" epochs="+str(args.epochs)+" lr0="+str(args.lr)+" max_det="+str(args.det)+" batch="+str(args.batch)+" cache="+str(args.cache)+" project="+args.dataset+" name="+name
-
-    # -- Run the script -- #
-    #print(loader) 
-    os.system(loader)
-
+    # -- Load model -- #
+    model = YOLO("yolov8l-seg.pt", task="segment")
+    name = get_name(args)
+    add_wandb_callbacks(model, run_name=name, project=args.dataset)
+    model.train(data=data, 
+                lr0=args.lr,
+                epochs=args.epochs, 
+                batch=args.batch,
+                cache=args.cache,
+                project=f"{args.out_dir}/{args.dataset}",
+                name=f"train_{get_name(args)}")
 
 def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "TNBC", "CryoNuSeg"]
@@ -58,8 +41,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
     parser.add_argument("--lr", type=int, default=0.0003, help="initial learning rate (i.e. SGD=1E-2, Adam=1E-3)")
     parser.add_argument("--epochs", type=int, default=500, help="number of epochs to train for")
-    parser.add_argument("--cache", action='store_true', help="True/ram, disk or False. Use cache for data loading")
-    parser.add_argument("--det", type=int, default=1000, help="maximum number of detections per image")
+    parser.add_argument("--cache", action='store_false', help="Disable dataset caching (on by default)")
+    parser.add_argument("--out-dir", type=str, default="yolov8_work_dirs", help="The base directory for saving yolov8 training results")
 
     args = parser.parse_args()
     return args
