@@ -1,4 +1,4 @@
-path: MoNuSeg/yolo/segment
+path: MoNuSeg/yolo
 train: train
 val: val
 test: test

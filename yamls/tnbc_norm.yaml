@@ -1,4 +1,4 @@
-path: TNBC_norm/yolo
+path: TNBC/yolo_sn
 train: train
 val: val
 test: test

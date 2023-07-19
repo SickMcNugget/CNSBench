@@ -1,4 +1,4 @@
-path: MoNuSAC/yolo_1cls_SNV/
+path: MoNuSAC/yolo
 train: train
 val: val
 test: test
