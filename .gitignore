@@ -3,3 +3,4 @@ final_preds
 *.pyc
 yolo_to_mask
 mmsegmentation
+yolov8*
