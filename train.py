@@ -97,13 +97,15 @@ def main(args: argparse.Namespace):
 
     args.dataset = "MoNuSeg"
     args.model = "unet"
+
+    configs_dir = Path("configs") / "mmseg"
     # -- grab the config location based on arguments -- #
-    default_cfg = Config.fromfile("configs/default.py")
-    dataset_cfg = Config.fromfile("configs/default_dataset.py")
-    default_model_cfg = Config.fromfile("configs/default_model.py")
-    model_cfg = Config.fromfile(f"configs/{args.model.lower()}.py")
+    default_cfg = Config.fromfile(configs_dir / "default.py")
+    dataset_cfg = Config.fromfile(configs_dir / "default_dataset.py")
+    default_model_cfg = Config.fromfile(configs_dir / "default_model.py")
+    model_cfg = Config.fromfile(configs_dir / f"{args.model.lower()}.py")
     if args.normalised:
-        normalised_cfg = Config.fromfile(f"configs/normalised_dataset.py")
+        normalised_cfg = Config.fromfile(configs_dir / "normalised_dataset.py")
 
     cfg = Config()
     cfg.merge_from_dict(default_cfg.to_dict())
