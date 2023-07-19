@@ -21,7 +21,7 @@ def main(args: argparse.Namespace):
     # Blame weights and biases for this
     scriptdir = os.path.dirname(__file__)
     work_dir = Path(scriptdir) / "yolov8_work_dirs"
-    if work_dir.exists():
+    if not work_dir.exists():
         work_dir.mkdir(parents=True)
 
     # To make project names that are "nice", the script MUST change directory
