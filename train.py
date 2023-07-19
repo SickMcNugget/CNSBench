@@ -95,9 +95,6 @@ def main(args: argparse.Namespace):
     # make sure the datasets are registered
     register_datasets() 
 
-    args.dataset = "MoNuSeg"
-    args.model = "unet"
-
     configs_dir = Path("configs") / "mmseg"
     # -- grab the config location based on arguments -- #
     default_cfg = Config.fromfile(configs_dir / "default.py")
@@ -188,8 +185,8 @@ def get_args() -> argparse.Namespace:
     #parser.add_argument("--project", type=str, required=True, help="The name to use for saving project data")
     parser.add_argument("--batch", type=int, default=2, help="The batch size to use during training")
     parser.add_argument("--wandb", action="store_true", help="Enables Weights and Biases for logging results")
-    parser.add_argument("--dataset", type=str, required=False, choices=DATASETS, help="The dataset to use for training")
-    parser.add_argument("--model", type=str, required=False, choices=MODELS, help="The model to use for training")
+    parser.add_argument("--dataset", type=str, required=True, choices=DATASETS, help="The dataset to use for training")
+    parser.add_argument("--model", type=str, required=True, choices=MODELS, help="The model to use for training")
     parser.add_argument("--dataset-root", type=Path, default=Path("datasets"), help="The base directory for datasets")
     parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
     parser.add_argument("--iterations", type=int, default=20000, help="The maximum iterations for training")
