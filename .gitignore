@@ -4,7 +4,4 @@ final_preds
 yolo_to_mask
 mmsegmentation
 work_dirs
-!yolo/
-yolo/*
-!yolo/export_yolo.py
-!yolo/train_yolo.py
+yolov8*

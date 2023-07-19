@@ -1,6 +1,7 @@
 import argparse
 from ultralytics import YOLO
 import os
+from pathlib import Path
 
 def get_config(dataset: str, normalised: bool):
     config = f"../configs/yamls/{dataset.lower()}"
@@ -19,13 +20,15 @@ def get_name(args: argparse.Namespace):
 def main(args: argparse.Namespace):
     # Blame weights and biases for this
     scriptdir = os.path.dirname(__file__)
-    if os.getcwd() != scriptdir:
-        os.chdir(scriptdir)
-        print("Moved to yolo directory to organise files")
+    work_dir = Path(scriptdir) / "yolov8_work_dirs"
+    if work_dir.exists():
+        work_dir.mkdir(parents=True)
+
+    # To make project names that are "nice", the script MUST change directory
+    os.chdir(work_dir)
 
     # -- Grab the dataset config for model -- #
     data = get_config(args.dataset, args.normalised)
-    print('[*] Config loaded: ' + data)
 
     # -- Load model -- #
     model = YOLO("yolov8l-seg.yaml", task="segment")

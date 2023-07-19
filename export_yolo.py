@@ -57,7 +57,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--max-det", type=int, default=1600, help="The maximum number of instances that can be predicted")
     parser.add_argument("--dataset-root", type=Path, default=Path("datasets"), help="The path to where datasets are stored")
     parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
-    parser.add_argument("--out-dir", type=Path, default=Path("."), help="The base directory for saving yolov8 training results")
+    parser.add_argument("--out-dir", type=Path, default=Path("yolov8_work_dirs"), help="The base directory for saving yolov8 training results")
 
     args = parser.parse_args()
     return args
