@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 def get_config(dataset: str, normalised: bool):
-    config = f"../configs/yamls/{dataset.lower()}"
+    config = f"configs/yamls/{dataset.lower()}"
     if normalised:
         config = f"{config}_norm"
     config += ".yaml"
