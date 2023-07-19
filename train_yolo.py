@@ -10,7 +10,7 @@ def get_config(dataset: str, normalised: bool):
     return config
 
 def get_name(args: argparse.Namespace):
-    name = f"yolov8l_1b{args.batch}-{args.epochs}e_{args.dataset.lower()}"
+    name = f"yolov8l_1xb{args.batch}-{args.epochs}e_{args.dataset.lower()}"
     if args.normalised:
         name += "_norm"
     name += "-640x640"
@@ -24,7 +24,10 @@ def main(args: argparse.Namespace):
     # -- Load model -- #
     model = YOLO("yolov8l-seg.pt", task="segment")
     name = get_name(args)
-    add_wandb_callbacks(model, run_name=name, project=args.dataset)
+    add_wandb_callbacks(model,
+                        run_name=name,
+                        project=args.dataset,
+                        dir=f"./{args.out_dir}")
     model.train(data=data, 
                 lr0=args.lr,
                 epochs=args.epochs, 
