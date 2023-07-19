@@ -1,9 +1,9 @@
 import argparse
 from ultralytics import YOLO
-from wandb.integration.yolov8 import add_callbacks as add_wandb_callbacks
+import os
 
 def get_config(dataset: str, normalised: bool):
-    config = f"configs/yamls/{dataset.lower()}"
+    config = f"../configs/yamls/{dataset.lower()}"
     if normalised:
         config = f"{config}_norm"
     config += ".yaml"
@@ -17,24 +17,25 @@ def get_name(args: argparse.Namespace):
     return name
 
 def main(args: argparse.Namespace):
+    # Blame weights and biases for this
+    scriptdir = os.path.dirname(__file__)
+    if os.getcwd() != scriptdir:
+        os.chdir(scriptdir)
+        print("Moved to yolo directory to organise files")
+
     # -- Grab the dataset config for model -- #
     data = get_config(args.dataset, args.normalised)
     print('[*] Config loaded: ' + data)
 
     # -- Load model -- #
-    model = YOLO("yolov8l-seg.pt", task="segment")
-    name = get_name(args)
-    add_wandb_callbacks(model,
-                        run_name=name,
-                        project=args.dataset,
-                        dir=f"./{args.out_dir}")
+    model = YOLO("yolov8l-seg.yaml", task="segment")
     model.train(data=data, 
                 lr0=args.lr,
                 epochs=args.epochs, 
                 batch=args.batch,
                 cache=args.cache,
-                project=f"{args.out_dir}/{args.dataset}",
-                name=f"train_{get_name(args)}")
+                project=f"{args.dataset}",
+                name=f"{get_name(args)}")
 
 def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "TNBC", "CryoNuSeg"]
@@ -45,7 +46,6 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=int, default=0.0003, help="initial learning rate (i.e. SGD=1E-2, Adam=1E-3)")
     parser.add_argument("--epochs", type=int, default=500, help="number of epochs to train for")
     parser.add_argument("--cache", action='store_false', help="Disable dataset caching (on by default)")
-    parser.add_argument("--out-dir", type=str, default="yolov8_work_dirs", help="The base directory for saving yolov8 training results")
 
     args = parser.parse_args()
     return args
