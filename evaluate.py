@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-
+from multiprocessing import Pool
 import pandas as pd
 from cnsbench import metrics
 import cv2
@@ -13,49 +13,51 @@ def main(args: argparse.Namespace):
     pred_paths = sorted(args.compare_root.glob("*.png"))
 
     results = {}
-    for gt_path, pred_path in zip(gt_paths, pred_paths):
-        if gt_path.name != pred_path.name:
-            print("Woah there buddy something seems to have gone awry")
 
+    pooldata = list(zip(gt_paths, pred_paths))
+    print(pooldata)
 
-        gt = cv2.imread(str(gt_path), cv2.IMREAD_GRAYSCALE)
-        pred = cv2.imread(str(pred_path), cv2.IMREAD_GRAYSCALE)
+    with Pool() as pool:
+        comparisons = pool.starmap(compare_masks, pooldata)
 
-        comparisons = {}
-        comparisons["name"] = gt_path.stem
-
-        parts = gt_path.parts
-        if "train" in parts:
-            comparisons["split"] = "train"
-        elif "val" in parts:
-            comparisons["split"] = "val"
-        elif "test" in parts:
-            comparisons["split"] = "test"
-
-        comparisons["accuracy"] = metrics.calc_accuracy(gt, pred)
-        comparisons["precision"] = metrics.calc_precision(gt, pred)
-        comparisons["recall"] = metrics.calc_recall(gt, pred)
-        comparisons["f1"] = metrics.calc_f1(comparisons["precision"], comparisons["recall"])
-        comparisons["iou"] = metrics.calc_iou(gt, pred)
-        comparisons["hausdorff"] = metrics.calc_object_hausdorff_fix(gt, pred)
-
-        for key, value in comparisons.items():
+    for comparison in comparisons:
+        for key, value in comparison.items():
             if not key in results:
                 results[key] = []
             results[key].append(value)
 
-        df = pd.DataFrame.from_dict(results)
-        df.set_index("name", inplace=True)
+    df = pd.DataFrame.from_dict(results)
+    df.set_index("name", inplace=True)
         
     print(df)
-    print(df.groupby("split").mean().loc[:, "f1":"iou"].round(3))
+    print(df.groupby("split").mean().loc[:, "f1":"hausdorff"].round(3))
 
-#def evaluate_dataset(args: argparse.Namespace):
-#    comparer = Comparer(args.dataset_root)
-#    # df = comparer.compare("../NucleiSegmentation_mmseg/export")
-#    df = comparer.compare(args.compare_root)
-#    print(df)
-#    print(df.groupby("split").mean().loc[:, "f1":"iou"].round(3))
+def compare_masks(gt_path: Path, pred_path: Path):
+    if gt_path.name != pred_path.name:
+        print("Woah there buddy something seems to have gone awry")
+
+    gt = cv2.imread(str(gt_path), cv2.IMREAD_GRAYSCALE)
+    pred = cv2.imread(str(pred_path), cv2.IMREAD_GRAYSCALE)
+
+    comparisons = {}
+    comparisons["name"] = gt_path.stem
+
+    parts = gt_path.parts
+    if "train" in parts:
+        comparisons["split"] = "train"
+    elif "val" in parts:
+        comparisons["split"] = "val"
+    elif "test" in parts:
+        comparisons["split"] = "test"
+
+    comparisons["accuracy"] = metrics.accuracy(gt, pred)
+    comparisons["precision"] = metrics.precision(gt, pred)
+    comparisons["recall"] = metrics.recall(gt, pred)
+    comparisons["f1"] = metrics.f1(comparisons["precision"], comparisons["recall"])
+    comparisons["iou"] = metrics.iou(gt, pred)
+    comparisons["hausdorff"] = metrics.general_object_hausdorff(gt, pred)
+
+    return comparisons
 
 def get_maskdir(args: argparse.Namespace):
     maskdir = args.dataset_root / args.dataset / "masks" / "test"
