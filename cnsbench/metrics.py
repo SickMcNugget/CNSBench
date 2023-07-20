@@ -38,7 +38,7 @@ def directed_object_hausdorff(A: np.ndarray, B: np.ndarray):
         B_objs_coords.append(B_obj_coords)
 
     A_to_B = 0.0
-    for A_label in tqdm(range(A_total_unique)):
+    for A_label in range(A_total_unique):
         A_obj = np.equal(A_inst, A_unique[A_label])
         A_obj_coords = np.transpose(np.nonzero(A_obj))
 
