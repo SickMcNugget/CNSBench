@@ -29,6 +29,14 @@ def directed_object_hausdorff(A: np.ndarray, B: np.ndarray):
     B_unique = B_unique[B_unique != 0]
     B_total_unique = len(B_unique)
 
+    # Allocate look up tables for object coordinates
+    # This algorithm is slow, so reducing memory allocations saves huge time
+    obj_dist = np.zeros(B_total_unique)
+    B_objs_coords = []
+    for B_label in range(B_total_unique):
+        B_obj_coords = np.transpose(np.nonzero(np.equal(B_inst, B_unique[B_label])))
+        B_objs_coords.append(B_obj_coords)
+
     A_to_B = 0.0
     for A_label in tqdm(range(A_total_unique)):
         A_obj = np.equal(A_inst, A_unique[A_label])
@@ -43,11 +51,8 @@ def directed_object_hausdorff(A: np.ndarray, B: np.ndarray):
             B_label = np.argmax(np.bincount(intersection))
             B_obj_coords = np.transpose(np.nonzero(np.equal(B_inst, B_label.item())))
         else:
-            obj_dist = np.zeros(B_total_unique)
-
             for B_label in range(B_total_unique):
-                B_obj_coords = np.transpose(np.nonzero(np.equal(B_inst, B_unique[B_label])))
-                obj_dist[B_label] = general_hausdorff_distance(A_obj_coords, B_obj_coords)
+                obj_dist[B_label] = general_hausdorff_distance(A_obj_coords, B_objs_coords[B_label])
 
             B_obj_label = np.argmin(obj_dist)
             B_obj_coords = np.transpose(np.nonzero(np.equal(B_inst, B_unique[B_obj_label])))
