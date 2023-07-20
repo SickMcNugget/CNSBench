@@ -41,7 +41,7 @@ def register_datasets():
                  **kwargs) -> None:
             super().__init__(
                 img_suffix=img_suffix, 
-                eg_map_suffix=seg_map_suffix,
+                seg_map_suffix=seg_map_suffix,
                 reduce_zero_label=reduce_zero_label,
                 **kwargs)
         
