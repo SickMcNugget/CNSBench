@@ -1,32 +1,62 @@
 import cv2
 import numpy as np
+from scipy.spatial.distance import directed_hausdorff
+from tqdm import tqdm
 
+def general_hausdorff_distance(A: np.ndarray, B: np.ndarray):
+    """Retrieved from the scipy docs:
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.directed_hausdorff.html#scipy.spatial.distance.directed_hausdorff
+    """
+    return max(directed_hausdorff(A, B)[0], directed_hausdorff(B, A)[0])
 
-def calc_hausdorff(X: np.ndarray, y: np.ndarray, class_idx=1):
-    X_contours = cv2.findContours(X, 
-                                  cv2.RETR_EXTERNAL, 
-                                  cv2.CHAIN_APPROX_SIMPLE)[0]
-    y_contours = cv2.findContours(y, 
-                                  cv2.RETR_EXTERNAL, 
-                                  cv2.CHAIN_APPROX_SIMPLE)[0]
+def general_object_hausdorff(gt: np.ndarray, pred: np.ndarray):
+    gt_to_pred = directed_object_hausdorff(gt, pred)
+    pred_to_gt = directed_object_hausdorff(pred, gt)
 
-    X_centroids = contours_to_centroids(X_contours)
-    y_centroids = contours_to_centroids(y_contours)
+    return (gt_to_pred + pred_to_gt) / 2
 
+def directed_object_hausdorff(A: np.ndarray, B: np.ndarray):
+    A_area = np.sum(np.greater(A, 0), dtype=np.float32)
 
-def contours_to_centroids(contours: tuple):
-    centroids = np.empty((len(contours),2), dtype=np.uint16)
-    for i in range(len(contours)):
-        contour = contours[i]
-        M = cv2.moments(contour)
-        centroid_x = int(M['m10']/M['m00'])
-        centroid_y = int(M['m01']/M['m00'])
-        centroids[i,0] = centroid_x
-        centroids[i,1] = centroid_y
-    return centroids
+    A_inst = cv2.connectedComponents(A)[1]
+    B_inst = cv2.connectedComponents(B)[1]
 
+    A_unique = np.unique(A_inst)
+    A_unique = A_unique[A_unique != 0]
+    A_total_unique = len(A_unique)
 
-def calc_precision(X: np.ndarray, y: np.ndarray, class_idx=1):
+    B_unique = np.unique(B_inst)
+    B_unique = B_unique[B_unique != 0]
+    B_total_unique = len(B_unique)
+
+    A_to_B = 0.0
+    for A_label in tqdm(range(A_total_unique)):
+        A_obj = np.equal(A_inst, A_unique[A_label])
+        A_obj_coords = np.transpose(np.nonzero(A_obj))
+
+        intersection = B_inst[A_obj]
+        intersection = intersection[intersection != 0]
+
+        # If they overlap, just grab the MOST overlapping prediction object
+        # Otherwise, calculate distance from all predictions to the ground truth and choose the closest
+        if len(intersection) > 0:
+            B_label = np.argmax(np.bincount(intersection))
+            B_obj_coords = np.transpose(np.nonzero(np.equal(B_inst, B_label.item())))
+        else:
+            obj_dist = np.zeros(B_total_unique)
+
+            for B_label in range(B_total_unique):
+                B_obj_coords = np.transpose(np.nonzero(np.equal(B_inst, B_unique[B_label])))
+                obj_dist[B_label] = general_hausdorff_distance(A_obj_coords, B_obj_coords)
+
+            B_obj_label = np.argmin(obj_dist)
+            B_obj_coords = np.transpose(np.nonzero(np.equal(B_inst, B_unique[B_obj_label])))
+
+        gamma = np.sum(A_obj, dtype=np.float32) / A_area
+        A_to_B += gamma * general_hausdorff_distance(A_obj_coords, B_obj_coords)
+    return A_to_B
+
+def precision(X: np.ndarray, y: np.ndarray, class_idx=1):
     ground_truth = np.equal(X, class_idx)
     predicted = np.equal(y, class_idx)
 
@@ -35,7 +65,7 @@ def calc_precision(X: np.ndarray, y: np.ndarray, class_idx=1):
     else:
         return (np.logical_and(ground_truth, predicted).sum() / predicted.sum())
 
-def calc_accuracy(X: np.ndarray, y: np.ndarray, class_idx=1):
+def accuracy(X: np.ndarray, y: np.ndarray, class_idx=1):
     ground_truth = np.equal(X, class_idx)
     predicted = np.equal(y, class_idx)
     not_ground_truth = np.logical_not(ground_truth)
@@ -47,7 +77,7 @@ def calc_accuracy(X: np.ndarray, y: np.ndarray, class_idx=1):
     # ground_truth.size represents TN + TP + FN + FP, as it contains all pixels.
     return ((tp + tn) / ground_truth.size)
 
-def calc_recall(X: np.ndarray, y: np.ndarray, class_idx=1):
+def recall(X: np.ndarray, y: np.ndarray, class_idx=1):
     ground_truth = np.equal(X, class_idx)
     predicted = np.equal(y, class_idx)
 
@@ -56,13 +86,13 @@ def calc_recall(X: np.ndarray, y: np.ndarray, class_idx=1):
     else:
         return (np.logical_and(ground_truth, predicted).sum() / ground_truth.sum())
 
-def calc_f1(precision: float, recall: float):
+def f1(precision: float, recall: float):
     if (precision + recall) == 0:
         return 0.0
 
     return 2 * ((precision * recall) / (precision + recall))
 
-def calc_iou(X: np.ndarray, y: np.ndarray, class_idx=1):
+def iou(X: np.ndarray, y: np.ndarray, class_idx=1):
     ground_truth = np.equal(X, class_idx)
     predicted = np.equal(y, class_idx)
 
