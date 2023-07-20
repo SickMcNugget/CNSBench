@@ -26,7 +26,7 @@ train_pipeline = [
 
 test_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='Resize', scale=scale, keep_ratio=True),
+    dict(type='Resize', scale=scale, keep_ratio=False),
     dict(type='LoadAnnotations'),
     dict(type='PackSegInputs')
 ]
