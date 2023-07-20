@@ -37,7 +37,7 @@ def main(args: argparse.Namespace):
         comparisons["recall"] = metrics.calc_recall(gt, pred)
         comparisons["f1"] = metrics.calc_f1(comparisons["precision"], comparisons["recall"])
         comparisons["iou"] = metrics.calc_iou(gt, pred)
-        # comparisons["hausdorff"] = metrics.calc_hausdorff(gt, pred)
+        comparisons["hausdorff"] = metrics.calc_object_hausdorff_fix(gt, pred)
 
         for key, value in comparisons.items():
             if not key in results:
@@ -47,8 +47,8 @@ def main(args: argparse.Namespace):
         df = pd.DataFrame.from_dict(results)
         df.set_index("name", inplace=True)
         
-        print(df)
-        print(df.groupby("split").mean().loc[:, "f1":"iou"].round(3))
+    print(df)
+    print(df.groupby("split").mean().loc[:, "f1":"iou"].round(3))
 
 #def evaluate_dataset(args: argparse.Namespace):
 #    comparer = Comparer(args.dataset_root)
@@ -65,11 +65,13 @@ def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "CryoNuSeg", "TNBC"]
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, choices=DATASETS, required=True, help="The dataset to use when comparing masks")
-    parser.add_argument("--compare-root", type=Path, required=True, help="The path where predictions lie")
+    parser.add_argument("--dataset", type=str, choices=DATASETS, required=False, help="The dataset to use when comparing masks")
+    parser.add_argument("--compare-root", type=Path, required=False, help="The path where predictions lie")
     parser.add_argument("--dataset-root", type=Path, default=Path("datasets"), help="The path where datasets are stored")
     args = parser.parse_args()
-    
+
+    args.dataset="MoNuSeg"
+    args.compare_root = Path("yolov8_work_dirs/export/stainnorm/MoNuSeg/yolov8/")
     return args
 
 if __name__=="__main__":
