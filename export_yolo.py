@@ -8,7 +8,7 @@ import torchvision.transforms as T
 def get_source(args: argparse.Namespace):
     source = args.dataset_root / args.dataset
     if args.normalised:
-        source = source / "yolo_snv"
+        source = source / "yolo_sn"
     else:
         source = source / "yolo"
     source = source / "test"
