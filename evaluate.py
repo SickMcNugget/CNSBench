@@ -1,9 +1,12 @@
 import argparse
 from pathlib import Path
+
+import numpy as np
+from cnsbench import metrics, istarmap
 from multiprocessing import Pool
 import pandas as pd
-from cnsbench import metrics
 import cv2
+from tqdm import tqdm
 
 def main(args: argparse.Namespace):
     # args.compare_root = "final_preds/nostainnorm/MoNuSAC/unet/"
@@ -15,10 +18,11 @@ def main(args: argparse.Namespace):
     results = {}
 
     pooldata = list(zip(gt_paths, pred_paths))
-    print(pooldata)
 
-    with Pool() as pool:
-        comparisons = pool.starmap(compare_masks, pooldata)
+    with Pool(4) as pool:
+        comparisons = [comparison for comparison in 
+                       tqdm(pool.istarmap(compare_masks, pooldata), total=len(pooldata))]
+        #comparisons = pool.starmap(compare_masks, pooldata)
 
     for comparison in comparisons:
         for key, value in comparison.items():
@@ -27,6 +31,8 @@ def main(args: argparse.Namespace):
             results[key].append(value)
 
     df = pd.DataFrame.from_dict(results)
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    df.dropna(inplace=True)
     df.set_index("name", inplace=True)
         
     print(df)
@@ -67,13 +73,12 @@ def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "CryoNuSeg", "TNBC"]
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, choices=DATASETS, required=False, help="The dataset to use when comparing masks")
-    parser.add_argument("--compare-root", type=Path, required=False, help="The path where predictions lie")
+    parser.add_argument("--dataset", type=str, choices=DATASETS, required=True, help="The dataset to use when comparing masks")
+    parser.add_argument("--compare-root", type=Path, required=True, help="The path where predictions lie")
     parser.add_argument("--dataset-root", type=Path, default=Path("datasets"), help="The path where datasets are stored")
     args = parser.parse_args()
-
-    args.dataset="MoNuSeg"
-    args.compare_root = Path("yolov8_work_dirs/export/stainnorm/MoNuSeg/yolov8/")
+   #args.dataset = "MoNuSAC"
+   #args.compare_root = Path("work_dirs/export/stainnorm/MoNuSAC/deeplabv3plus")
     return args
 
 if __name__=="__main__":
