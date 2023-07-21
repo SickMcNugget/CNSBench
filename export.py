@@ -4,37 +4,78 @@ from mmseg.structures import SegDataSample
 import mmcv
 import argparse
 from pathlib import Path
-import numpy as np
-import cv2
-import cnsbench
+from cnsbench.results import export_raw_prediction
+
+def get_source(args: argparse.Namespace):
+    source = args.dataset_root / args.dataset
+    if args.normalised:
+        source = source / "yolo_sn"
+    else:
+        source = source / "yolo"
+    source = source / "test"
+    return source
+
+def get_save_path(args: argparse.Namespace):
+    save_path = args.out_dir / "export"
+    if args.normalised:
+        save_path = save_path / "stainnorm"
+    else:
+        save_path = save_path / "nostainnorm"
+
+    save_path = save_path / args.dataset
+    if "deeplabv3plus" in args.config.name or "deeplabv3plus" in args.checkpoint.parents:
+        save_path = save_path / "deeplabv3plus"
+    elif "unet" in args.config.name or "unet" in args.checkpoint.parents:
+        save_path = save_path / "unet"
+    
+    return save_path
+
+def get_config(args: argparse.Namespace):
+    checkpoint_dir = args.checkpoint.parent
+    config = list(checkpoint_dir.glob("*.py"))
+    if len(config) == 1:
+        return config[0]
+    else:
+        print("Error getting config")
+        return None
 
 def main(args: argparse.Namespace):
-    if not args.output.exists():
-        args.output.mkdir(parents=True)
+    if args.config is None:
+        args.config = get_config(args)
+
+    save_path = get_save_path(args)
+    if not save_path.exists():
+        save_path.mkdir(parents=True)
 
     cfg = Config.fromfile(args.config)
 
     # Init the model from the config and the checkpoint
     model = init_model(cfg, str(args.checkpoint), 'cuda:0')
 
-    export_all(args.source, model, args.output) #classes, palette)
+    export_all(get_source(args), model, save_path) #classes, palette)
 
 def export_all(path: Path, model, out_dir: Path):
     assert path.exists(), "path does not exist"
     images = sorted(path.glob("*.png"))
     for image in images:
-        img = mmcv.imread(image, channel_order='bgr')
-        result: SegDataSample = inference_model(model, img)
-        cnsbench.results.export_raw_prediction(result, str(out_dir / image.name))
+        # img = mmcv.imread(image, channel_order='rgb')
+        result: SegDataSample = inference_model(model, image)
+        print(result.pred_sem_seg.data.max())
+        export_raw_prediction(result, str(out_dir / image.name))
 
 def get_args() -> argparse.Namespace:
+    DATASETS = ["MoNuSeg", "MoNuSAC", "CryoNuSeg", "TNBC"]
     parser = argparse.ArgumentParser()
-    parser.add_argument("-s", "--source", type=Path, help="The folder containing images for inference")
-    parser.add_argument("-o", "--output", type=Path, default="export", help="The folder to place results")
-    parser.add_argument("--config", type=Path, help="The configuration file to use for inference (.py)")
-    parser.add_argument("--checkpoint", type=Path, help="The model checkpoint to use for inference (.pth)")
-
+    parser.add_argument("--dataset", required=False, type=str, choices=DATASETS, help="The folder containing images for inference")
+    parser.add_argument("--dataset-root", type=Path, default=Path("datasets"), help="The path to where datasets are stored")
+    parser.add_argument("--out-dir", type=Path, default=Path("work_dirs"), help="The folder to place results")
+    parser.add_argument("--config", type=Path, default=None, help="The configuration file to use for inference (.py)")
+    parser.add_argument("--checkpoint", type=Path, required=False, help="The model checkpoint to use for inference (.pth)")
+    parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
     args = parser.parse_args()
+    args.dataset = "MoNuSAC"
+    args.checkpoint = Path("work_dirs/Deeplabv3+_cnsbench/MoNuSAC_cnsbench_20000_sn/MoNuSAC/deeplabv3plus/2023-07-20_13_53_57/iter_20000-e7f580d7.pth")
+    args.normalised = True
 
     return args
 
