@@ -8,47 +8,75 @@ from pathlib import Path
 import numpy as np
 import cv2
 
+from cnsbench.results import numpy_from_result
+
+def get_config(args: argparse.Namespace):
+    checkpoint_dir = args.checkpoint.parent
+    config = list(checkpoint_dir.glob("*.py"))
+    if len(config) == 1:
+        return config[0]
+    else:
+        print("Error getting config")
+        return None
+
+def get_images(args: argparse.Namespace):
+    images = args.dataset_root / args.dataset
+    if args.normalised:
+        images = images / "yolo_sn"
+    else:
+        images /= "yolo"
+    images /= "test"
+    return sorted(images.glob("*.png"))
+
+def get_mask(image_path: Path):
+    image_name = image_path.name
+    return image_path.parents[2] / "masks" / "test" / image_name
+
 def main(args: argparse.Namespace):
+    if args.config is None:
+        args.config = get_config(args)
+
+    images = get_images(args)
+    if len(images) == 0:
+        print("No images found!")
+        return
+
     cfg = Config.fromfile(args.config)
-
-    # Init the model from the config and the checkpoint
     model = init_model(cfg, str(args.checkpoint), 'cuda:0')
-
     classes = model.dataset_meta['classes']
     palette = model.dataset_meta['palette']
 
-    img = mmcv.imread(args.source, channel_order='bgr')
-    if args.ground_truth:
-        ground_truth = mmcv.imread(args.ground_truth, channel_order='bgr')
+    for image in images:
+        img = mmcv.imread(image, channel_order='bgr')
+        ground_truth = mmcv.imread(get_mask(image), flag="grayscale")
+        result: SegDataSample = inference_model(model, img)
 
-    result: SegDataSample = inference_model(model, img)
+        if args.binary:
+            # Under the hood, this function converts the result to a numpy array and displays it
+            original = cv2.equalizeHist(ground_truth)
+            prediction = cv2.equalizeHist(numpy_from_result(result))
+        else:
+            original = mask_overlay(img, ground_truth, classes, palette, args.outline)
+            prediction = prediction_overlay(img, result, classes, palette, args.outline)
+            
+        cv2.imshow(f"{image.stem} - Ground Truth", original)
+        cv2.imshow(f"{image.stem} - Prediction", prediction)
+        key = cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        if key == ord('q'):
+            break
 
-    if args.binary:
-        # Under the hood, this function converts the result to a numpy array and displays it
-        show_raw_prediction(result)
-    else:
-        prediction_overlay = get_overlayed_prediction(img, result, classes, palette, args.outline)
-        
-        if args.ground_truth:
-            ground_truth_overlay = overlay_mask(img, ground_truth, classes, palette, args.outline)
-        
-        cv2.imshow("Original", img)
-        cv2.imshow("Prediction", prediction_overlay)
-        if args.ground_truth:
-            cv2.imshow("Ground Truth", ground_truth_overlay)
-        cv2.waitKey(0)
-
-def get_overlayed_prediction(src: np.ndarray,
+def prediction_overlay(src: np.ndarray,
                              result: SegDataSample,
                              classes: "list[str]", 
                              palette: "list[list[int, int, int]]",
                              outline: bool,
                              alpha: float = 0.5) -> np.ndarray:     
     mask = numpy_from_result(result)
-    dest = overlay_mask(src, mask, classes, palette, outline=outline, alpha=alpha)
+    dest = mask_overlay(src, mask, classes, palette, outline=outline, alpha=alpha)
     return dest
 
-def overlay_mask(src: np.ndarray,
+def mask_overlay(src: np.ndarray,
                  mask: np.ndarray,
                  classes: "list[str]", 
                  palette: "list[list[int, int, int]]", 
@@ -77,51 +105,17 @@ def overlay_mask(src: np.ndarray,
 
     return dest
 
-def show_raw_prediction(result: SegDataSample):
-    """Uses OpenCV to show segmentation results
-
-    Parameters
-    ----------
-    result : SegDataSample
-        The predictions made by an mmsegmentation model
-
-    """    
-    prediction = numpy_from_result(result)
-    cv2.imshow("Prediction", prediction)
-    cv2.waitKey(0)
-
-def numpy_from_result(result: SegDataSample, squeeze: bool = True, as_uint: bool = True) -> np.ndarray:
-    """Converts an mmsegmentation inference result into a numpy array (for exporting and visualisation)
-
-    Parameters
-    ----------
-    result : SegDataSample
-        The segmentation results to extract the numpy array from
-    squeeze : bool, optional
-        Squeezes down useless dimensions (mainly for binary segmentation), by default True
-    as_uint : bool, optional
-        Converts the array to uint8 format, instead of (usually) int64, by default True
-
-    Returns
-    -------
-    np.ndarray
-        The extracted numpy array
-    """    
-    array: np.ndarray = result.pred_sem_seg.cpu().numpy().data
-    if squeeze:
-        array = array.squeeze()
-    if as_uint:
-        array = array.astype(np.uint8)
-    return array
-
 def get_args() -> argparse.Namespace:
+    DATASETS = ["MoNuSeg", "MoNuSAC", "CryoNuSeg", "TNBC"]
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("-s", "--source", type=Path, required=True, help="The image to perform inference on")
-    parser.add_argument("--ground-truth", type=Path, help="The ground truth mask for the selected image")
-    parser.add_argument("--config", type=Path, required=True, help="The configuration file to use for inference (.py)")
+    parser.add_argument("--dataset", required=True, type=str, choices=DATASETS, help="The folder containing images for inference")
+    parser.add_argument("--dataset-root", type=Path, default=Path("datasets"), help="The path to where datasets are stored")
+    parser.add_argument("--config", type=Path, default=None, help="The configuration file to use for inference (.py)")
     parser.add_argument("--checkpoint", type=Path, required=True, help="The model checkpoint to use for inference (.pth)")
     parser.add_argument("-b", "--binary", action='store_true', help="Whether black and white binary masks should be produced")
     parser.add_argument("--outline", action='store_true', default=True, help="Whether overlays should be drawn as an outline instead of filled in")
+    parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
 
     args = parser.parse_args()
 
