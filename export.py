@@ -60,22 +60,18 @@ def export_all(path: Path, model, out_dir: Path):
     for image in images:
         # img = mmcv.imread(image, channel_order='rgb')
         result: SegDataSample = inference_model(model, image)
-        print(result.pred_sem_seg.data.max())
         export_raw_prediction(result, str(out_dir / image.name))
 
 def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "CryoNuSeg", "TNBC"]
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", required=False, type=str, choices=DATASETS, help="The folder containing images for inference")
+    parser.add_argument("--dataset", required=True, type=str, choices=DATASETS, help="The folder containing images for inference")
     parser.add_argument("--dataset-root", type=Path, default=Path("datasets"), help="The path to where datasets are stored")
     parser.add_argument("--out-dir", type=Path, default=Path("work_dirs"), help="The folder to place results")
     parser.add_argument("--config", type=Path, default=None, help="The configuration file to use for inference (.py)")
-    parser.add_argument("--checkpoint", type=Path, required=False, help="The model checkpoint to use for inference (.pth)")
+    parser.add_argument("--checkpoint", type=Path, required=True, help="The model checkpoint to use for inference (.pth)")
     parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
     args = parser.parse_args()
-    args.dataset = "MoNuSAC"
-    args.checkpoint = Path("work_dirs/Deeplabv3+_cnsbench/MoNuSAC_cnsbench_20000_sn/MoNuSAC/deeplabv3plus/2023-07-20_13_53_57/iter_20000-e7f580d7.pth")
-    args.normalised = True
 
     return args
 
