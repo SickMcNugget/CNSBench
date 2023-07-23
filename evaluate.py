@@ -35,8 +35,8 @@ def main(args: argparse.Namespace):
     df.dropna(inplace=True)
     df.set_index("name", inplace=True)
         
-    print(df)
-    print(df.groupby("split").mean().loc[:, "f1":"hausdorff"].round(3))
+    print(df.groupby("split").median().loc[:, "f1":"hausdorff"].round(3))
+    #print(df.groupby("split").mean().loc[:, "f1":"hausdorff"].round(3))
 
 def compare_masks(gt_path: Path, pred_path: Path):
     if gt_path.name != pred_path.name:
