@@ -2,17 +2,21 @@ from pathlib import Path
 import argparse
 from cnsbench.datasets import DatasetManager
 
+
 def main(args: argparse.Namespace):
     manager = DatasetManager(args.dataset_root)
 
     for dataset in args.datasets:
         manager.prepare(dataset)
- 
+
+
 def get_args() -> argparse.Namespace:
     DATASETS = ["MoNuSeg", "MoNuSAC", "TNBC", "CryoNuSeg"]
     parser = argparse.ArgumentParser()
-    parser.add_argument("--datasets", action="append", choices=DATASETS, help="The datasets available for download and preparation")
-    parser.add_argument("--dataset-root", default=Path("datasets"), type=Path, help="The path to output the dataset")
+    parser.add_argument("--datasets", action="append", choices=DATASETS,
+                        help="The datasets available for download and preparation")
+    parser.add_argument("--dataset-root", default=Path("datasets"),
+                        type=Path, help="The path to output the dataset")
 
     args = parser.parse_args()
 
@@ -20,10 +24,11 @@ def get_args() -> argparse.Namespace:
         args.datasets = DATASETS
     # argparse does not have an option for forcing unique values, so this is done 'manually'.
     args.datasets = set(args.datasets)
-    
+
     return args
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     args = get_args()
 
     # Ensure old profiling data is cleaned up
