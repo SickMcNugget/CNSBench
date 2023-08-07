@@ -6,3 +6,4 @@ mmsegmentation
 work_dirs
 yolov8*
 *.sh
+predictions

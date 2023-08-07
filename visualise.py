@@ -7,6 +7,8 @@ import argparse
 from pathlib import Path
 import numpy as np
 import cv2
+import datetime
+import os
 
 from cnsbench.results import numpy_from_result
 
@@ -45,26 +47,51 @@ def main(args: argparse.Namespace):
     model = init_model(cfg, str(args.checkpoint), 'cuda:0')
     classes = model.dataset_meta['classes']
     palette = model.dataset_meta['palette']
-
+    now = datetime.datetime.now()
+    if args.save is not None:
+        save_dir = f"{args.save}/{now.year}-{now.month:02d}-{now.day:02d}_{now.hour:02d}_{now.minute:02d}"
+    try:
+        os.mkdir(save_dir)
+    except OSError as error:
+        print(error)
+    i = 0
     for image in images:
-        img = mmcv.imread(image, channel_order='bgr')
-        ground_truth = mmcv.imread(get_mask(image), flag="grayscale")
-        result: SegDataSample = inference_model(model, img)
-
-        if args.binary:
-            # Under the hood, this function converts the result to a numpy array and displays it
-            original = cv2.equalizeHist(ground_truth)
-            prediction = cv2.equalizeHist(numpy_from_result(result))
+        if args.number is not None:
+            if i < args.number:
+                process_images(image, model, classes, palette, args, now)
+                key = cv2.waitKey(0)
+                cv2.destroyAllWindows()
+                if key == ord('q'):
+                    break
+                i = i + 1
         else:
-            original = mask_overlay(img, ground_truth, classes, palette, args.outline)
-            prediction = prediction_overlay(img, result, classes, palette, args.outline)
-            
+            process_images(image, model, classes, palette, args, now)
+            key = cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            if key == ord('q'):
+                break
+
+def process_images(image, model, classes, palette, args, now):
+    img = mmcv.imread(image, channel_order='bgr')
+    ground_truth = mmcv.imread(get_mask(image), flag="grayscale")
+    result: SegDataSample = inference_model(model, img)
+
+    if args.binary:
+        # Under the hood, this function converts the result to a numpy array and displays it
+        original = cv2.equalizeHist(ground_truth)
+        prediction = cv2.equalizeHist(numpy_from_result(result))
+    else:
+        original = mask_overlay(img, ground_truth, classes, palette, args.outline)
+        prediction = prediction_overlay(img, result, classes, palette, args.outline)
+    
+    if args.save is not None:
+        save_name = f"{args.save}/{now.year}-{now.month:02d}-{now.day:02d}_{now.hour:02d}_{now.minute:02d}/{image.name}"
+        print("[*] Saving to: "+save_name)
+        cv2.imwrite(save_name, prediction)
+    else:
         cv2.imshow(f"{image.stem} - Ground Truth", original)
         cv2.imshow(f"{image.stem} - Prediction", prediction)
-        key = cv2.waitKey(0)
-        cv2.destroyAllWindows()
-        if key == ord('q'):
-            break
+    
 
 def prediction_overlay(src: np.ndarray,
                              result: SegDataSample,
@@ -116,7 +143,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("-b", "--binary", action='store_true', help="Whether black and white binary masks should be produced")
     parser.add_argument("--outline", action='store_true', default=True, help="Whether overlays should be drawn as an outline instead of filled in")
     parser.add_argument("--normalised", action='store_true', help="Whether to train on stain normalised images")
-
+    parser.add_argument("--number", type=int, help="Limit how many images to process visuals for")
+    parser.add_argument("--save", type=Path, help="directory to save predictions to")
     args = parser.parse_args()
 
     return args
