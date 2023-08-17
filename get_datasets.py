@@ -1,6 +1,6 @@
 from pathlib import Path
 import argparse
-from cnsbench.datasets import make_directories, get_monuseg, get_monusac
+from cnsbench.datasets import make_directories, get_monuseg, get_monusac, get_tnbc, get_cryonuseg
 
 
 def main(args: argparse.Namespace):
@@ -8,10 +8,14 @@ def main(args: argparse.Namespace):
 
     for dataset in args.datasets:
         make_directories(args.dataset_root, dataset)
-        if dataset == "MoNuSeg":
-            get_monuseg(args.dataset_root)
+        # if dataset == "MoNuSeg":
+        #     get_monuseg(args.dataset_root)
         # elif dataset == "MoNuSAC":
         #     get_monusac(args.dataset_root)
+        # if dataset == "TNBC":
+        #     get_tnbc(args.dataset_root)
+        if dataset == "CryoNuSeg":
+            get_cryonuseg(args.dataset_root)
 
 
 def get_args() -> argparse.Namespace:

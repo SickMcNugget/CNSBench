@@ -3,7 +3,6 @@ from __future__ import annotations
 # builtins
 from abc import ABC, abstractmethod
 from pathlib import Path
-import os
 import sys
 import subprocess
 from zipfile import ZipFile
@@ -55,20 +54,18 @@ class ZenodoDownloader(Downloader):
     def __init__(self) -> None:
         super().__init__()
 
-    def download(self, zip_source: str, expected_zip_names: list[Path]) -> Path:
+    def download(self, zip_source: str) -> Path:
         try:
             subprocess.run(["zenodo_get", zip_source])
         except FileNotFoundError:
             pass
-
-        return Path(expected_zip_names[0].name)
 
 
 class KaggleDownloader(Downloader):
     def __init__(self) -> None:
         super().__init__()
 
-    def download(self, zip_source: str, expected_zip_names: list[Path]) -> Path:
+    def download(self, zip_source: str) -> Path:
         try:
             ret = subprocess.run(
                 ["kaggle", "datasets", "download", "-d", zip_source],
@@ -80,8 +77,6 @@ class KaggleDownloader(Downloader):
                 "Please configure ~/.kaggle/kaggle.json. Follow the instructions"
                 + " on their website."
             )
-
-        return Path(expected_zip_names[0].name)
 
 
 class Unzipper:
@@ -1371,6 +1366,71 @@ def make_directories(dataset_root: Path, dataset_name: str):
     make_folder_if_new((dataset_root / "zips"))
     make_folder_if_new((dataset_root / "unzips"))
 
+def generate_cryonuseg_mask(mask: Path):
+    img = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
+    img[img == 255] = 1
+    cv2.imwrite(str(mask), img)
+
+def yolofy_cryonuseg_file(patient_img: Path, patient_mask: Path, yolofy_path: Path):
+    img = cv2.imread(str(patient_img))
+    cv2.imwrite(str(yolofy_path / patient_img.with_suffix(".png").name), img)
+
+    mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
+    height, width = mask.shape[:2]
+
+    nuclei = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+
+    normalised_nuclei = []
+    for nucleus in nuclei:
+        float_nucleus = nucleus.astype(float)
+        float_nucleus[:, :, 0] /= width
+        float_nucleus[:, :, 1] /= height
+        normalised_nuclei.append(float_nucleus)
+
+    annotations = ""
+    for normalised_nucleus in normalised_nuclei:
+        annotations += "0"
+        for vertex in normalised_nucleus:
+            annotations += f" {vertex[0, 0]} {vertex[0, 1]}"
+        annotations += f" {normalised_nucleus[0, 0, 0]} {normalised_nucleus[0, 0, 1]}\n"
+
+    filename = yolofy_path / patient_mask.with_suffix(".txt").name
+    with open(filename, "w") as f:
+        f.write(annotations)
+
+def generate_tnbc_mask(mask: Path):
+    img = cv2.imread(str(mask), cv2.IMREAD_GRAYSCALE)
+    img[img == 255] = 1
+    cv2.imwrite(str(mask), img)
+
+
+def yolofy_tnbc_file(patient_img: Path, patient_mask: Path, yolofy_path: Path):
+    # original image is already a PNG
+    shutil.copy(patient_img, (yolofy_path / patient_img.name))
+
+    mask = cv2.imread(str(patient_mask), cv2.IMREAD_GRAYSCALE)
+    height, width = mask.shape[:2]
+
+    nuclei = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+
+    normalised_nuclei = []
+    for nucleus in nuclei:
+        float_nucleus = nucleus.astype(float)
+        float_nucleus[:, :, 0] /= width
+        float_nucleus[:, :, 1] /= height
+        normalised_nuclei.append(float_nucleus)
+
+    annotations = ""
+    for normalised_nucleus in normalised_nuclei:
+        annotations += "0"
+        for vertex in normalised_nucleus:
+            annotations += f" {vertex[0, 0]} {vertex[0, 1]}"
+        annotations += f" {normalised_nucleus[0, 0, 0]} {normalised_nucleus[0, 0, 1]}\n"
+
+    filename = yolofy_path / patient_mask.with_suffix(".txt").name
+    with open(filename, "w") as f:
+        f.write(annotations)
+
 
 def generate_monuseg_mask(xml_parser: XMLParser, patient: Path, mask_path: Path):
     patient_image = patient.with_suffix(".tif")
@@ -1464,7 +1524,7 @@ def generate_monusac_mask(xml_parser: XMLParser, patient: Path, mask_path: Path)
     cv2.imwrite(filename, mask)
 
 
-def yolofy_file(xml_parser: XMLParser, patient_xml: Path, yolofy_path: Path):
+def yolofy_monusac_file(xml_parser: XMLParser, patient_xml: Path, yolofy_path: Path):
     patient_image = patient_xml.with_suffix(".svs")
 
     if not patient_image.exists():
@@ -1498,17 +1558,19 @@ def yolofy_file(xml_parser: XMLParser, patient_xml: Path, yolofy_path: Path):
         f.write(annotations)
 
 
-def requires_download(zip_folder, zip_names) -> bool:
+def requires_download(zip_folder: Path, zip_names: list[str]) -> bool:
     for zip_name in zip_names:
         if not (zip_folder / zip_name).exists():
             return True
     return False
 
-def requires_unzip(unzip_folder) -> bool:
-    for zip_name in self.expected_zip_names:
-        if not (self.unzip_folder / zip_name.stem).exists():
+
+def requires_unzip(unzip_folder: Path, zip_names: list[str]) -> bool:
+    for zip_name in zip_names:
+        if not ((unzip_folder / zip_name).with_suffix("")).exists():
             return True
     return False
+
 
 def files_exist(folder: Path, file_names: set[str]) -> bool:
     for file in file_names:
@@ -1516,20 +1578,24 @@ def files_exist(folder: Path, file_names: set[str]) -> bool:
             return False
     return True
 
+
 def get_monuseg(dataset_root: Path):
-    ZIP_SOURCES = {
+    ZIP_SOURCES = [
         "1ZgqFJomqQGNnsx7w7QBzQQMVA16lbVCA",
         "1NKkSQ5T0ZNQ8aUhh0a8Dt2YKYCQXIViw",
-    }
-    ZIP_NAMES = {"MoNuSeg 2018 Training Data.zip", "MoNuSegTestData.zip"}
+    ]
+    # This can be a set, but make sure it is sorted when retrieved via an
+    # iterator, as sets are UNORDERED. Yes, this caused a bug.
+    ZIP_NAMES = ["MoNuSeg 2018 Training Data.zip", "MoNuSegTestData.zip"]
 
     # download
     zip_folder = dataset_root / "zips"
 
     if files_exist(zip_folder, ZIP_NAMES):
+        print("No need to download...")
         zip_paths = [zip_folder / zip_name for zip_name in ZIP_NAMES]
     else:
-        print("Downloading")
+        print("Downloading...")
         zip_paths = []
         downloader = GDownloader()
         for zip_src in ZIP_SOURCES:
@@ -1540,15 +1606,16 @@ def get_monuseg(dataset_root: Path):
     # Unzip
     unzip_folder = dataset_root / "unzips"
     unzip_paths = [(unzip_folder / zip_path.stem) for zip_path in zip_paths]
-    unzip_names = {os.path.splitext(zip_name)[0] for zip_name in ZIP_NAMES}
+    unzip_names = [zip_name[:-4] for zip_name in ZIP_NAMES]
 
     unzipper = Unzipper()
     if not files_exist(unzip_folder, unzip_names):
         print("Unzipping...")
         for zip_path in zip_paths:
             unzipper.unzip(zip_path, (unzip_folder / zip_path.stem))
+    else:
+        print("Unzipped datasets already present...")
 
-    print(zip_paths)
     # move
     xmls = sorted((unzip_paths[0] / unzip_paths[0].stem).glob("**/*.xml"))
     tifs = sorted((unzip_paths[0] / unzip_paths[0].stem).glob("**/*.tif"))
@@ -1559,7 +1626,7 @@ def get_monuseg(dataset_root: Path):
 
     original_paths = [
         (dataset_root / "MoNuSeg" / "original" / split)
-        for split in {"train", "val", "test"}
+        for split in ["train", "val", "test"]
     ]
 
     train_path = original_paths[0]
@@ -1577,12 +1644,10 @@ def get_monuseg(dataset_root: Path):
     for file in test_files:
         copy_file_if_new(file, test_path)
 
-    sys.exit()
-
     # masks
     mask_paths = [
         (dataset_root / "MoNuSeg" / "masks" / split)
-        for split in {"train", "val", "test"}
+        for split in ["train", "val", "test"]
     ]
 
     xml_parser = MoNuSegXMLParser()
@@ -1597,7 +1662,7 @@ def get_monuseg(dataset_root: Path):
     # yolo
     yolo_paths = [
         (dataset_root / "MoNuSeg" / "yolo" / split)
-        for split in {"train", "val", "test"}
+        for split in ["train", "val", "test"]
     ]
 
     for original_path, yolo_path in zip(original_paths, yolo_paths):
@@ -1610,7 +1675,7 @@ def get_monuseg(dataset_root: Path):
     # yolo stain-normalised
     yolosn_paths = [
         (dataset_root / "MoNuSeg" / "yolo_sn" / split)
-        for split in {"train", "val", "test"}
+        for split in ["train", "val", "test"]
     ]
     fit_image = yolo_paths[0] / "TCGA-A7-A13E-01Z-00-DX1.png"
     stain_normaliser = StainNormaliser("reinhard", fit_image)
@@ -1633,8 +1698,10 @@ def get_monusac(dataset_root: Path):
     zip_folder = dataset_root / "zips"
 
     if files_exist(zip_folder, ZIP_NAMES):
+        print("No need to download...")
         zip_paths = [zip_folder / zip_name for zip_name in ZIP_NAMES]
     else:
+        print("Downloading...")
         zip_paths = []
         downloader = GDownloader()
         for zip_src in ZIP_SOURCES:
@@ -1645,17 +1712,20 @@ def get_monusac(dataset_root: Path):
     # Unzip
     unzip_folder = dataset_root / "unzips"
     unzip_paths = [(unzip_folder / zip_path.stem) for zip_path in zip_paths]
-    unzip_names = {os.path.splitext(zip_name)[0] for zip_name in ZIP_NAMES}
+    unzip_names = [zip_name[:-4] for zip_name in ZIP_NAMES]
 
     unzipper = Unzipper()
     if not files_exist(unzip_folder, unzip_names):
+        print("Unzipping...")
         for zip_path in zip_paths:
             unzipper.unzip(zip_path, (unzip_folder / zip_path.stem))
+    else:
+        print("Unzipped datasets already present...")
 
     # move
     original_paths = [
         (dataset_root / "MoNuSAC" / "original" / split)
-        for split in {"train", "val", "test"}
+        for split in ["train", "val", "test"]
     ]
 
     patients = sorted((unzip_paths[0] / unzip_paths[0].stem).glob("*"))
@@ -1676,7 +1746,7 @@ def get_monusac(dataset_root: Path):
     # masks
     mask_paths = [
         (dataset_root / "MoNuSAC" / "masks" / split)
-        for split in {"train", "val", "test"}
+        for split in ["train", "val", "test"]
     ]
 
     xml_parser = MoNuSACXMLParser()
@@ -1691,7 +1761,7 @@ def get_monusac(dataset_root: Path):
     # yolo
     yolo_paths = [
         (dataset_root / "MoNuSAC" / "yolo" / split)
-        for split in {"train", "val", "test"}
+        for split in ["train", "val", "test"]
     ]
 
     for original_path, yolo_path in zip(original_paths, yolo_paths):
@@ -1699,14 +1769,245 @@ def get_monusac(dataset_root: Path):
         pooldata = [(xml_parser, patient, yolo_path) for patient in patients]
 
         with Pool() as pool:
-            pool.starmap(yolofy_monuseg_file, pooldata)
+            pool.starmap(yolofy_monusac_file, pooldata)
 
     # yolo stain-normalised
     yolosn_paths = [
         (dataset_root / "MoNuSAC" / "yolo_sn" / split)
-        for split in {"train", "val", "test"}
+        for split in ["train", "val", "test"]
     ]
     fit_image = yolo_paths[0] / "TCGA-A2-A0ES-01Z-00-DX1_2.png"
+    stain_normaliser = StainNormaliser("reinhard", fit_image)
+
+    # Manually chosen
+    stain_normaliser.normalise(yolo_paths, yolosn_paths)
+
+
+def get_tnbc(dataset_root: Path):
+    ZIP_SOURCES = ["10.5281/zenodo.1175282"]
+    ZIP_NAMES = ["TNBC_NucleiSegmentation.zip"]
+
+    # download
+    zip_folder = dataset_root / "zips"
+    if files_exist(zip_folder, ZIP_NAMES):
+        print("No need to download...")
+        zip_paths = [zip_folder / zip_name for zip_name in ZIP_NAMES]
+    else:
+        print("Downloading...")
+        zip_paths = []
+        downloader = ZenodoDownloader()
+        for zip_source, zip_name in zip(ZIP_SOURCES, ZIP_NAMES):
+            downloader.download(zip_source)
+            shutil.move(zip_name, zip_folder)
+            zip_paths.append(zip_folder / zip_name)
+
+    # Unzip
+    unzip_folder = dataset_root / "unzips"
+    unzip_paths = [(unzip_folder / zip_path.stem) for zip_path in zip_paths]
+    unzip_names = [zip_name[:-4] for zip_name in ZIP_NAMES]
+
+    unzipper = Unzipper()
+    if not files_exist(unzip_folder, unzip_names):
+        print("Unzipping...")
+        for zip_path in zip_paths:
+            unzipper.unzip(zip_path, (unzip_folder / zip_path.stem))
+    else:
+        print("Unzipped datasets already present...")
+
+    # move
+    original_paths = [
+        (dataset_root / "TNBC" / "original" / split)
+        for split in ["train", "val", "test"]
+    ]
+
+    mask_paths = [
+        (dataset_root / "TNBC" / "masks" / split) for split in ["train", "val", "test"]
+    ]
+
+    folders = sorted(unzip_paths[0].glob("**/Slide_*"))
+    train_folders = folders[:6]
+    val_folders = [folders[i] for i in [6, 9, 10]]
+    test_folders = [folders[i] for i in [7, 8]]
+
+    for train_folder in train_folders:
+        copy_folder_if_new(train_folder, original_paths[0])
+    for val_folder in val_folders:
+        copy_folder_if_new(val_folder, original_paths[1])
+    for test_folder in test_folders:
+        copy_folder_if_new(test_folder, original_paths[2])
+
+    mask_folders = sorted((unzip_paths[0] / unzip_paths[0].stem).glob("**/GT_*"))
+    train_mask_folders = mask_folders[:6]
+    val_mask_folders = [mask_folders[i] for i in [6, 9, 10]]
+    test_mask_folders = [mask_folders[i] for i in [7, 8]]
+
+    for train_mask_folder in train_mask_folders:
+        copy_folder_if_new(train_mask_folder, mask_paths[0])
+    for val_mask_folder in val_mask_folders:
+        copy_folder_if_new(val_mask_folder, mask_paths[1])
+    for test_mask_folder in test_mask_folders:
+        copy_folder_if_new(test_mask_folder, mask_paths[2])
+
+    # masks
+    for original_path, mask_path in zip(original_paths, mask_paths):
+        masks = sorted(mask_path.glob("*.png"))
+        pooldata = [mask for mask in masks]
+
+        with Pool() as pool:
+            pool.map(generate_tnbc_mask, pooldata)
+
+    # yolo
+    yolo_paths = [
+        (dataset_root / "TNBC" / "yolo" / split) for split in ["train", "val", "test"]
+    ]
+
+    for original_path, yolo_path, mask_path in zip(
+        original_paths, yolo_paths, mask_paths
+    ):
+        patient_imgs = sorted(original_path.glob("*.png"))
+        patient_masks = sorted(mask_path.glob("*.png"))
+        pooldata = [
+            (patient_img, patient_mask, yolo_path)
+            for patient_img, patient_mask in zip(patient_imgs, patient_masks)
+        ]
+
+        with Pool() as pool:
+            pool.starmap(yolofy_tnbc_file, pooldata)
+
+    # yolo stain-normalised
+    yolosn_paths = [
+        (dataset_root / "TNBC" / "yolo_sn" / split)
+        for split in ["train", "val", "test"]
+    ]
+    fit_image = yolo_paths[0] / "03_1.png"
+    stain_normaliser = StainNormaliser("reinhard", fit_image)
+
+    # Manually chosen
+    stain_normaliser.normalise(yolo_paths, yolosn_paths)
+
+
+def get_cryonuseg(dataset_root: Path):
+    ZIP_SOURCES = ["ipateam/segmentation-of-nuclei-in-cryosectioned-he-images"]
+    ZIP_NAMES = ["segmentation-of-nuclei-in-cryosectioned-he-images.zip"]
+
+    # download
+    zip_folder = dataset_root / "zips"
+    if files_exist(zip_folder, ZIP_NAMES):
+        print("No need to download...")
+        zip_paths = [zip_folder / zip_name for zip_name in ZIP_NAMES]
+    else:
+        print("Downloading...")
+        zip_paths = []
+        downloader = KaggleDownloader()
+        for zip_source, zip_name in zip(ZIP_SOURCES, ZIP_NAMES):
+            downloader.download(zip_source)
+            shutil.move(zip_name, zip_folder)
+            zip_paths.append(zip_folder / zip_name)
+
+    # Unzip
+    unzip_folder = dataset_root / "unzips"
+    unzip_paths = [(unzip_folder / zip_path.stem) for zip_path in zip_paths]
+    unzip_names = [zip_name[:-4] for zip_name in ZIP_NAMES]
+
+    unzipper = Unzipper()
+    if not files_exist(unzip_folder, unzip_names):
+        print("Unzipping...")
+        for zip_path in zip_paths:
+            unzipper.unzip(zip_path, (unzip_folder / zip_path.stem))
+    else:
+        print("Unzipped datasets already present...")
+
+
+
+
+    # move
+    original_paths = [
+        (dataset_root / "CryoNuSeg" / "original" / split)
+        for split in ["train", "val", "test"]
+    ]
+
+    mask_paths = [
+        (dataset_root / "CryoNuSeg" / "masks" / split) for split in ["train", "val", "test"]
+    ]
+
+    train_tifs = sorted(unzip_paths[0].glob("tissue images/*[12].tif"))
+    val_test_tifs = sorted(unzip_paths[0].glob("tissue images/*3.tif"))
+    val_tifs = val_test_tifs[:5]
+    test_tifs = val_test_tifs[5:]
+
+    for train_tif in train_tifs:
+        copy_file_if_new(train_tif, original_paths[0])
+    for val_tif in val_tifs:
+        copy_file_if_new(val_tif, original_paths[1])
+    for test_tif in test_tifs:
+        copy_file_if_new(test_tif, original_paths[2])
+
+    train_mask_tifs = sorted(
+        unzip_paths[0].glob("Annotator 2*/**/mask binary without border/*[12].png")
+    )
+    val_test_mask_tifs = sorted(
+        unzip_paths[0].glob("Annotator 2*/**/mask binary without border/*3.png")
+    )
+    val_mask_tifs = val_test_mask_tifs[:5]
+    test_mask_tifs = val_test_mask_tifs[5:]
+
+    for train_mask_tif in train_mask_tifs:
+        copy_file_if_new(train_mask_tif, mask_paths[0])
+    for val_mask_tif in val_mask_tifs:
+        copy_file_if_new(val_mask_tif, mask_paths[1])
+    for test_mask_tif in test_mask_tifs:
+        copy_file_if_new(test_mask_tif, mask_paths[2])
+
+    # masks
+    for original_path, mask_path in zip(original_paths, mask_paths):
+        masks = sorted(mask_path.glob("*.png"))
+        pooldata = [mask for mask in masks]
+
+        with Pool() as pool:
+            pool.map(generate_cryonuseg_mask, pooldata)
+
+    def yolofy_files(
+        self,
+        original_paths: list[Path],
+        yolofy_paths: list[Path],
+        mask_paths: list[Path],
+    ):
+        for original_path, yolofy_path, mask_path in zip(
+            original_paths, yolofy_paths, mask_paths
+        ):
+            pooldata = self.get_pooldata(original_path, yolofy_path, mask_path)
+
+            with Pool() as pool:
+                for _ in tqdm(
+                    pool.istarmap(self.yolofy_file, pooldata), total=len(pooldata)
+                ):
+                    pass
+
+
+    # yolo
+    yolo_paths = [
+        (dataset_root / "CryoNuSeg" / "yolo" / split) for split in ["train", "val", "test"]
+    ]
+
+    for original_path, yolo_path, mask_path in zip(
+        original_paths, yolo_paths, mask_paths
+    ):
+        patient_imgs = sorted(original_path.glob("*.tif"))
+        patient_masks = sorted(mask_path.glob("*.png"))
+        pooldata = [
+            (patient_img, patient_mask, yolo_path)
+            for patient_img, patient_mask in zip(patient_imgs, patient_masks)
+        ]
+
+        with Pool() as pool:
+            pool.starmap(yolofy_cryonuseg_file, pooldata)
+
+    # yolo stain-normalised
+    yolosn_paths = [
+        (dataset_root / "CryoNuSeg" / "yolo_sn" / split)
+        for split in ["train", "val", "test"]
+    ]
+    fit_image = yolo_paths[0] / "Human_Larynx_02.png"
     stain_normaliser = StainNormaliser("reinhard", fit_image)
 
     # Manually chosen
