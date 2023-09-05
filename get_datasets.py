@@ -7,6 +7,7 @@ from cnsbench.datasets import (
     files_exist,
     missing_files,
     Unzipper,
+    StainExtractor,
     StainNormaliser,
 )
 
@@ -60,6 +61,13 @@ def main(args: argparse.Namespace):
         else:
             print(f"Yolofying {dataset.name}...")
             dataset.yolofy()
+
+        if not missing_files(dataset.stain_paths):
+            print(f"No need to extract stains for {dataset.name}...")
+        else:
+            print(f"Extracting stains for {dataset.name}...")
+            stain_extractor = StainExtractor(dataset.fit_image)
+            stain_extractor.extract(dataset.yolo_paths, dataset.stain_paths)
 
         if not missing_files(dataset.yolosn_paths):
             print(f"No need to stain normalise {dataset.name}...")

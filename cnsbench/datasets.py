@@ -192,6 +192,35 @@ class StainNormaliser:
                 shutil.copy(txt, yolosn_path)
 
 
+class StainExtractor:
+    def __init__(self, fit_image: Path) -> None:
+        super().__init__()
+
+        self.fit_image = fit_image
+        self.T = transforms.Compose(
+            [transforms.ToTensor(), transforms.Lambda(lambda x: x * 255)]
+        )
+
+        self.normaliser = torchstain.normalizers.MacenkoNormalizer(backend="torch")
+
+        fit_img = cv2.cvtColor(cv2.imread(str(fit_image)), cv2.COLOR_BGR2RGB)
+        self.normaliser.fit(self.T(fit_img))
+
+    def extract(self, yolo_paths: list[Path], stain_paths: list[Path]):
+        for yolo_path, stain_path in zip(yolo_paths, stain_paths):
+            pngs = sorted(yolo_path.glob("*.png"))
+            for png in pngs:
+                to_normalise = cv2.cvtColor(cv2.imread(str(png)), cv2.COLOR_BGR2RGB)
+                _, H, E = self.normaliser.normalize(I=self.T(to_normalise), stains=True)
+
+                H = H.numpy().astype(np.uint8)
+                E = E.numpy().astype(np.uint8)
+                H = cv2.cvtColor(H, cv2.COLOR_RGB2BGR)
+                E = cv2.cvtColor(E, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(str(stain_path / f"{png.stem}_H.png"), H)
+                cv2.imwrite(str(stain_path / f"{png.stem}_E.png"), E)
+
+
 class Dataset(ABC):
     def __init__(self, dataset_root: Path):
         self.dataset_root = dataset_root
@@ -250,6 +279,14 @@ class Dataset(ABC):
             self.dataset_root / self.name / "yolo_sn" / "train",
             self.dataset_root / self.name / "yolo_sn" / "val",
             self.dataset_root / self.name / "yolo_sn" / "test",
+        ]
+
+    @property
+    def stain_paths(self) -> list[Path]:
+        return [
+            self.dataset_root / self.name / "stains" / "train",
+            self.dataset_root / self.name / "stains" / "val",
+            self.dataset_root / self.name / "stains" / "test",
         ]
 
     @abstractmethod
@@ -772,12 +809,14 @@ def make_directories(dataset_root: Path, name: str):
     masks_directory = dataset_root / name / "masks"
     yolo_directory = dataset_root / name / "yolo"
     yolo_sn_directory = dataset_root / name / "yolo_sn"
+    stains_directory = dataset_root / name / "stains"
 
     for path in {"train", "val", "test"}:
         make_folder_if_new((base_directory / path))
         make_folder_if_new((masks_directory / path))
         make_folder_if_new((yolo_directory / path))
         make_folder_if_new((yolo_sn_directory / path))
+        make_folder_if_new((stains_directory / path))
 
     make_folder_if_new((dataset_root / "zips"))
     make_folder_if_new((dataset_root / "unzips"))
