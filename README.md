@@ -1,6 +1,6 @@
 # Semantic Segmentation for Improved Cell Nuclei Analysis
 
-Tested with python 3.10.
+Tested with python 3.10, Ubuntu 22.04.2 LTS
 
 # Installation
 1. Some form of conda is required for this project.
@@ -34,6 +34,19 @@ pip install -r requirements.txt
 # Usage
 Each script handles a step of the process, beginning with get_datasets.py
 
+## Command line arguments meaning
+- dataset: The name of the dataset to train on
+- normalised: Whether stain normalised version should be used
+- batch: The batch size
+- lr: The learning rate
+- epochs: The number of epochs for training
+- iterations: The number of iterations (total batches) for training
+- cache: Allows for disabling caching
+- model: Choose either unet or deeplabv3plus
+- dataset-root: The base directory for downloaded datasets
+- *-interval: the number of iterations before something happens
+- wandb: Allows training results to be logged to Weights and Biases
+
 ## Datasets
 To download all datasets, simply run
 ```bash
@@ -41,5 +54,67 @@ python get_datasets.py
 ```
 To change the root directory for downloaded datasets, use the --dataset-root flag
 ```bash
-python get_datasets.py --dataset-root ~/my_datasets # for example
+python get_datasets.py --dataset-root ~/my_datasets 
+```
+
+## Training
+
+There are training scripts for both YOLOv8 and the MMSegmentation models.
+To run the YOLOv8 training script on MoNuSeg:
+```bash
+python train_yolo.py --dataset MoNuSeg
+```
+To run the YOLOv8 training script on Normalised MoNuSeg images:
+```bash
+python train_yolo.py --dataset MoNuSeg --normalised
+```
+To change some hyperparameters (note that --cache DISABLES caching):
+```bash
+python train_yolo.py --dataset MoNuSeg --batch 16 --lr 0.001 --epochs 200 --cache
+```
+  
+To run the MMSegmentation training script:
+```bash
+python train.py --dataset MoNuSeg --model deeplabv3plus --normalised
+```
+Some other settings
+```bash
+python train.py --dataset MoNuSAC --model unet --wandb --iterations 25000 --val-interval 10000 --log-interval 10 --checkpoint-interval 5000
+```
+
+## Visualising
+For YOLOv8:
+```bash
+python visualise_yolo.py --dataset MoNuSeg --model <your_model>.pt
+```
+Additional options
+```bash
+python visualise_yolo.py --dataset MoNuSeg --model <your_model>.pt --max-det 1000 --normalised --binary --outline
+```
+  
+For MMSegmentation
+```bash
+python visualise.py --dataset CryoNuSeg --config <your_config>.py --checkpoint <your ckpt>.pth --binary --outline --normalised
+```
+
+## Exporting predictions
+For YOLOv8:
+```bash
+python export_yolo.py --model <yolo_model>.pt --dataset TNBC --normalised
+```
+For MMSegmentation:
+```bash
+python export.py --checkpoint <your_ckpt>.pth --dataset TNBC --normalised
+```
+
+## Evaluation
+```bash
+python evaluate.py --dataset MoNuSeg --compare-root <path_to_model_predictions>
+```
+
+## A full example for TNBC (stain normalised)
+```bash
+python train.py --dataset TNBC --model unet --normalised
+python export.py --checkpoint "work_dirs/TNBC/unet/<date>/iter_20000*.pth" --dataset TNBC --normalised
+python evaluate.py --dataset TNBC --compare-root work_dirs/export/stainnorm/TNBC/unet
 ```
