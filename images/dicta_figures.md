@@ -30,7 +30,7 @@
 :-------------------------:|:-------------------------:
 ![a](fig_3/fig_3_a_TCGA-2Z-A9J9-01A-01-TS1.png)  |  ![b](fig_3/fig_3_b_TCGA-2Z-A9J9-01A-01-TS1.png)
  **(c)** |  **(d)**
- <img src="fig_3/fig_3_c_TCGA-2Z-A9J9-01A-01-TS1.png" width="1000"/>  |  ![d](fig_3/fig_3_d_TCGA-2Z-A9J9-01A-01-TS1.png)
+ <img src="fig_3/fig_3_c_TCGA-F9-A8NY-01Z-00-DX1.png" width="1000"/>  |  ![d](fig_3/fig_3_d_TCGA-F9-A8NY-01Z-00-DX1.png)
 
 ***Fig. 3.** All model predictions from the original MoNuSeg test set. (a) Ground truth provided for reference with three model predictions, (b) DeepLabV3+, (c) U-Net, (d) YOLOv8*
 </div>
@@ -44,6 +44,19 @@
 ![a](fig_4/fig_4_a_TCGA-2Z-A9J9-01A-01-TS1.png)  |  ![b](fig_4/fig_4_b_TCGA-2Z-A9J9-01A-01-TS1.png)
  **(c)** |  **(d)**
  <img src="fig_4/fig_4_c_TCGA-2Z-A9J9-01A-01-TS1.png" width="1000"/>  |  ![d](fig_4/fig_4_d_TCGA-2Z-A9J9-01A-01-TS1.png)
+
+***Fig. 4.** All model predictions from the stain normalised MoNuSeg test set. (a) Ground truth provided for reference with three model predictions, (b) DeepLabV3+, (c) U-Net, (d) YOLOv8*
+</div>
+
+## Figure 5:
+
+<div style="width: 50%; height: 50%">
+ 
+  **(a)** |  **(b)**
+:-------------------------:|:-------------------------:
+![a](fig_5/fig_5_a_TCGA-2Z-A9J9-01A-01-TS1.png)  |  ![b](fig_5/fig_5_b_TCGA-2Z-A9J9-01A-01-TS1.png)
+ **(c)** |  **(d)**
+ <img src="fig_5/fig_5_c_TCGA-2Z-A9J9-01A-01-TS1.png" width="1000"/>  |  ![d](fig_5/fig_5_d_TCGA-2Z-A9J9-01A-01-TS1.png)
 
 ***Fig. 4.** All model predictions from the stain normalised MoNuSeg test set. (a) Ground truth provided for reference with three model predictions, (b) DeepLabV3+, (c) U-Net, (d) YOLOv8*
 </div>
