@@ -2,7 +2,7 @@
 
 ## Figure 1:
 
-<div style="width: 35%; height: 35%">
+<div style="width: 25%; height: 25%">
   
   ![A Hematoxylin and Eosin stained tissue image](fig_1/fig_1.png)
   ***Fig. 1.** A Hematoxylin and Eosin stained tissue image*
