@@ -120,4 +120,4 @@ python evaluate.py --dataset TNBC --compare-root work_dirs/export/stainnorm/TNBC
 ```
 
 # To see High Resolution Images from Dicta 2023 Conference Paper *Semantic Segmentation for Improved Cell Nuclei Analysis*
-![Semantic Segmentation for Improved Cell Nuclei Analysis](/../images/images/dicta_figures.md)
+[Semantic Segmentation for Improved Cell Nuclei Analysis](/../images/images/dicta_figures.md)
