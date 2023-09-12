@@ -118,3 +118,6 @@ python train.py --dataset TNBC --model unet --normalised
 python export.py --checkpoint "work_dirs/TNBC/unet/<date>/iter_20000*.pth" --dataset TNBC --normalised
 python evaluate.py --dataset TNBC --compare-root work_dirs/export/stainnorm/TNBC/unet
 ```
+
+# To see High Resolution Images from Dicta 2023 Conference Paper *Semantic Segmentation for Improved Cell Nuclei Analysis*
+![Semantic Segmentation for Improved Cell Nuclei Analysis](/../images/images/dicta_figures.md)
