@@ -1,7 +1,0 @@
-path: TNBC/yolo_sn
-train: train
-val: val
-test: test
-
-names:
-  0: nucleus

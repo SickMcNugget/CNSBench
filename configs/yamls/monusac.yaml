@@ -1,7 +1,0 @@
-path: MoNuSAC/yolo
-train: train
-val: val
-test: test
-
-names:
-  0: nucleus
