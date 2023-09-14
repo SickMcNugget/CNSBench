@@ -19,7 +19,7 @@
  **(c)** |  **(d)**
  ![c](fig_2/fig_2_c_TCGA-F9-A8NY-01Z-00-DX1.png)  |  ![d](fig_2/fig_2_d_TCGA-F9-A8NY-01Z-00-DX1.png)
 
-***Fig. 2.** Images from the MoNuSeg dataset. (a) and (c) show original images from the MoNuSeg dataset. (b) shows an example of a well-stained slide with minimal change. (d) shows an example of a poorly stained slide with moderate colour change*
+***Fig. 2.** Images from the MoNuSeg dataset. (a) and (c) show original images. (b) shows an example of a well-stained slide with minimal change. (d) shows an example of a poorly stained slide with moderate colour change*
 </div>
 
 ## Figure 3:
